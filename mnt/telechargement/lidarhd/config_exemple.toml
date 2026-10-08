@@ -1,0 +1,20 @@
+# Configuration de telechargement_mnt_ign.py (MNT LiDAR HD IGN via WMS)
+# Usage : python telechargement_mnt_ign.py --config config.toml
+#
+# Chemins Windows : utiliser des apostrophes simples ('C:\...').
+
+[chemins]
+emprise_gpkg = 'zone_rectangulaire.gpkg'          # emprise en Lambert 93
+dossier_dalles = './lidar_output/mnt_data/'       # dalles 1x1 km téléchargées
+mosaique = './lidar_output/mosaique_mnt.tif'      # mosaïque finale
+log = 'lidar_mnt_download.log'
+
+[telechargement]
+max_workers = 6        # téléchargements parallèles
+timeout_s = 120        # timeout par requête (s)
+resolution_px = 2000   # pixels par côté de dalle de 1 km (2000 -> 0,5 m)
+
+[gdal]
+# Environnement conda contenant gdalbuildvrt / gdal_translate,
+# utilisé seulement si aucun environnement conda n'est activé
+conda_prefix = 'C:\Users\<utilisateur>\AppData\Local\anaconda3\envs\pdal_env'

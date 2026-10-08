@@ -1,0 +1,52 @@
+# Configuration de bathy_calage.py
+# Usage : python bathy_calage.py --config config.toml
+#
+# Chemins Windows : utiliser des apostrophes simples ('C:\...') pour que
+# les antislashs ne soient pas interprétés.
+
+[entrees]
+# Couche des nœuds du maillage TELEMAC (repère local ou L93)
+noeuds_shp = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\_SIG\_Vecteurs\TELEMAC\noeuds_maillage_global_barr_eff_repere_local.shp'
+
+# Sources de bathymétrie, par ordre de priorité décroissante.
+#   epsg     : EPSG de la source (optionnel, sinon lu dans le fichier)
+#   z_offset : translation verticale appliquée à la source (m)
+[[rasters]]
+chemin = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\_SIG\_Bathymetrie\_assemblage_lit_mineur\lit_mineur_v15.tif'
+label = "Assemblage_lit_mineur"
+epsg = 2154
+z_offset = 0.00
+
+[[rasters]]
+chemin = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\_SIG\_Rasters\LIDARHD_mNN_0_5.tif'
+label = "LHD"
+epsg = 2154
+z_offset = 0.00
+
+[[rasters]]
+chemin = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\_SIG\_Rasters\DGM1m.tif'
+label = "DGM"
+epsg = 25832
+z_offset = 0.045
+
+[parametres]
+epsg_sortie = 2154
+z_min = -30.0            # valeurs hors [z_min, z_max] ignorées
+z_max = 300.0
+nodata_fallback = -9000.0
+# Translation repère local -> L93 (0 si les nœuds sont déjà en L93)
+offset_x = 1000000.0
+offset_y = 6800000.0
+
+[sorties]
+dossier = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\_Telemac\_modele_global_avec_barr'
+nom_shp = "noeuds_bathy_modele_global_barr_eff"
+nom_csv_bathy = "noeuds_bathy_locale"
+
+[carte]
+titre = "Bathymétrie - modèle"
+colormap = "terrain"
+
+[proj]
+# Emplacements de proj.db essayés si l'environnement conda n'en fournit pas
+chemins_secours = ['C:\OSGeo4W\share\proj', 'C:\Program Files\GDAL\projlib']

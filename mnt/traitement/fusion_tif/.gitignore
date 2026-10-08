@@ -1,0 +1,18 @@
+﻿__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.env
+.vscode/
+.idea/
+*.log
+*.tmp
+*.bak
+*.pyo
+*.pyd
+.DS_Store
+Thumbs.db
+
+# Configuration locale (voir config_exemple.toml)
+config.toml

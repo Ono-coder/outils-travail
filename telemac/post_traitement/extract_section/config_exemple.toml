@@ -1,0 +1,9 @@
+# Configuration de extract_section.py
+# Usage : python extract_section.py --config config.toml
+#
+# Chemins Windows : utiliser des apostrophes simples ('C:\...').
+
+[fichiers]
+resultat = 'T2DSEO'                        # fichier résultat des sections de contrôle TELEMAC
+sections = 'control_sections.txt'          # fichier de définition des sections
+sortie_excel = 'control_sections.xlsx'     # fichier Excel de sortie

@@ -1,0 +1,20 @@
+# Configuration de asc2tif.py
+# Usage : python asc2tif.py --config config.toml
+# Les options passées en ligne de commande (--input, --output, --compress,
+# --epsg, --workers) restent prioritaires sur ce fichier.
+#
+# Chemins Windows : utiliser des apostrophes simples ('C:\...').
+
+[chemins]
+entree = './asc_data/'      # dossier des fichiers ASC
+sortie = './tif_data/'      # dossier de destination des TIF
+
+[conversion]
+compression = 'LZW'         # LZW, DEFLATE ou NONE
+epsg = 2154                 # projection à affecter (supprimer la ligne pour ne pas en imposer)
+# workers = 8               # processus parallèles (défaut : automatique)
+
+[gdal]
+# Environnement conda contenant gdal_translate,
+# utilisé seulement si aucun environnement conda n'est activé
+conda_prefix = 'C:\Users\<utilisateur>\AppData\Local\anaconda3\envs\pdal_env'

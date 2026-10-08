@@ -1,0 +1,20 @@
+# Configuration de dgm1.py (téléchargement DGM1 LGL-BW)
+# Usage : python dgm1.py --config config.toml
+#
+# Chemins Windows : utiliser des apostrophes simples ('C:\...').
+
+[chemins]
+emprise_gpkg = 'zone_rectangulaire.gpkg'           # emprise (tout SCR)
+dossier_dalles = './dgm1_output/kacheln/'          # dalles 1x1 km extraites
+mosaique = './dgm1_output/mosaique_dgm1_bw.tif'    # mosaïque finale
+log = 'dgm1_portail_download.log'
+
+[telechargement]
+produit = "dgm1"       # dgm1 (1 m) ou dgm025 (0,25 m) si disponible
+max_workers = 3        # threads parallèles (modéré pour ne pas surcharger le portail)
+timeout_s = 120        # timeout par requête (s)
+
+[gdal]
+# Environnement conda contenant gdalbuildvrt / gdal_translate,
+# utilisé seulement si aucun environnement conda n'est activé
+conda_prefix = 'C:\Users\<utilisateur>\AppData\Local\anaconda3\envs\pdal_env'

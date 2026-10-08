@@ -1,0 +1,50 @@
+# Configuration de meteo_download.py
+# Usage : python meteo_download.py --config config.toml
+#
+# Une clé absente reprend sa valeur par défaut. Pour « pas de limite » ou
+# « toutes les variables », il suffit d'omettre (ou commenter) la clé.
+
+# Mode d'exécution :
+#   "find"     → cherche les stations proches + carte HTML
+#   "download" → télécharge les données + CSV + graphique
+#   "gaps"     → analyse des lacunes sur le CSV existant
+#   "both"     → enchaîne find + download
+#   "all"      → enchaîne les trois modes
+mode = "both"
+
+[recherche]
+# Point de référence (WGS84)
+lat = 46.387406346586154
+lon = 5.862522478040992
+n_stations = 25          # nombre de stations les plus proches
+rayon_max_km = 300       # rayon maximal (omettre = pas de limite)
+
+[telechargement]
+# NUM_POSTE Météo-France, entre guillemets (zéros initiaux compris).
+# Consultez la carte générée par le mode "find" pour trouver les IDs.
+stations = [
+    "39478003", "39478006", "39113001", "39478004", "39373001",
+    "39275004", "39275002", "39413001", "39547002", "1247005",
+    "39275005", "1247002",  "1210002",  "1210001",  "39333001",
+    "1247003",  "1173002",  "1247004",  "39294001", "39130002",
+    "39086002", "1173011",  "39086001", "1173001",  "39118001",
+]
+
+# Variables à conserver (omettre = toutes)
+#   Précipitations : RR
+#   Températures   : TN, TX, TM, TNTXM, TAMPLI, TNSOL, TN50
+#   Vent           : FFM, FF2M, FXY, DXY, HXY, FXI, DXI, HXI, FXI3S
+#   Humidité/autre : INST, GLOT, DIFT, DIRT, UN, UX, UM, PMER, PSTAT
+#   Neige          : NEIGETOT, NEIGETOTX, NEIGE6H, NEIGE12H, NEIGE18H
+variables = ["RR"]
+
+inclure_colonnes_qualite = false   # colonnes QRR, QTN, …
+force_refresh_latest = true        # re-télécharger les fichiers "latest" en cache
+variable_graphique = "RR"          # variable tracée (doit être dans variables)
+
+[lacunes]
+# Variables analysées (omettre = toutes celles du CSV)
+# variables = ["RR", "TX", "TM"]
+
+[sorties]
+dossier = "meteo_output"           # carte, CSV, graphiques et cache

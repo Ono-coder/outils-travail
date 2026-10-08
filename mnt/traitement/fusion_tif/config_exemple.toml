@@ -1,0 +1,18 @@
+# Configuration de fusion.py
+# Usage : python fusion.py --config config.toml
+# Les options passées en ligne de commande (--input, --output, --pattern)
+# restent prioritaires sur ce fichier.
+#
+# Chemins Windows : utiliser des apostrophes simples ('C:\...').
+
+[chemins]
+entree = './lidar_output/mnt_data/'              # dossier des TIF à fusionner
+sortie = './lidar_output/mosaique_finale.tif'    # mosaïque de sortie
+
+[fusion]
+pattern = '*.tif'                                # motif de sélection des fichiers
+
+[gdal]
+# Environnement conda contenant gdalbuildvrt / gdal_translate,
+# utilisé seulement si aucun environnement conda n'est activé
+conda_prefix = 'C:\Users\<utilisateur>\AppData\Local\anaconda3\envs\pdal_env'

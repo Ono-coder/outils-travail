@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.env
+.vscode/
+.idea/
+*.log
+*.tmp
+*.bak
+
+# Configuration locale (voir config_exemple.toml)
+config.toml

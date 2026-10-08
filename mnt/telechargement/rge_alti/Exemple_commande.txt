@@ -1,0 +1,5 @@
+python extract_rgealti.py --xmin 315500 --ymin 6774400 --xmax 330415 --ymax 6788515 --archive rge.z
+
+Télécharger la donnée et utiliser le programme d'extraction puis créer un raster virtuel sous qgis avec l'ensemble des fichiers asc.
+
+https://geoservices.ign.fr/telechargement-api/RGEALTI
