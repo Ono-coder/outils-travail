@@ -15,12 +15,15 @@ l'identité de l'auteur et de ses projets, puis archive le dépôt source.
      chemins C:\\Users\\<nom>… — rien n'est copié s'il reste un problème ;
   5. copie dans le dossier de destination, commit sous l'identité neutre
      définie dans anonymisation.toml, push ;
-  6. archivage du dépôt source (gh repo archive), seulement si le push a réussi.
+  6. archivage du dépôt source (gh repo archive), seulement si le push a réussi ;
+     ou, avec --supprimer, suppression DÉFINITIVE du dépôt source (gh repo
+     delete), après confirmation en retapant son nom.
 
 Usage :
     python integrer_depot.py Ono-coder/mon_depot outils/mon_outil
     python integrer_depot.py Ono-coder/mon_depot outils/mon_outil --exclure "*.docx" --simulation
     python integrer_depot.py --archiver-seulement Ono-coder/depot1 Ono-coder/depot2
+    python integrer_depot.py --supprimer-seulement Ono-coder/depot1 Ono-coder/depot2
 
 Prérequis : git, et gh (GitHub CLI) authentifié pour l'archivage.
 """
@@ -170,6 +173,27 @@ def archiver(depots):
         print(f"Archivé : {depot}")
 
 
+def supprimer(depots):
+    """Supprime définitivement des dépôts GitHub, chacun confirmé en retapant son nom."""
+    print("ATTENTION : la suppression d'un dépôt GitHub est DÉFINITIVE "
+          "(code, historique, issues). Les fichiers écartés à l'intégration "
+          "(anciennes versions, documents, secrets) seront perdus.")
+    for depot in depots:
+        reponse = input(f"\nPour supprimer {depot}, retapez son nom complet (vide = passer) : ").strip()
+        if reponse != depot:
+            print(f"  Non supprimé : {depot}")
+            continue
+        res = subprocess.run(["gh", "repo", "delete", depot, "--yes"],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if res.returncode == 0:
+            print(f"  Supprimé : {depot}")
+        elif "delete_repo" in res.stderr:
+            sys.exit("  gh n'a pas le droit de supprimer des dépôts : lancer une fois\n"
+                     "    gh auth refresh -h github.com -s delete_repo\npuis recommencer.")
+        else:
+            sys.exit(f"  Échec de la suppression de {depot} : {res.stderr.strip()}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Intègre un dépôt GitHub dans outils-travail (anonymisé, sans historique) puis l'archive")
@@ -187,13 +211,23 @@ def main():
                         help="Tout vérifier sans rien copier, commiter, pousser ni archiver")
     parser.add_argument("--sans-push", action="store_true", help="Commiter sans pousser (et donc sans archiver)")
     parser.add_argument("--sans-archive", action="store_true", help="Ne pas archiver le dépôt source")
+    parser.add_argument("--supprimer", action="store_true",
+                        help="Supprimer DÉFINITIVEMENT le dépôt source au lieu de l'archiver "
+                             "(après push réussi et confirmation)")
+    parser.add_argument("--supprimer-seulement", nargs="+", metavar="DEPOT",
+                        help="Supprimer DÉFINITIVEMENT ces dépôts déjà intégrés (confirmation pour chacun)")
     parser.add_argument("--archiver-seulement", nargs="+", metavar="DEPOT",
                         help="Archiver ces dépôts déjà intégrés, sans rien intégrer")
     args = parser.parse_args()
 
+    if args.supprimer_seulement:
+        supprimer(args.supprimer_seulement)
+        return
     if args.archiver_seulement:
         archiver(args.archiver_seulement)
         return
+    if args.supprimer and args.sans_archive:
+        parser.error("--supprimer et --sans-archive sont incompatibles")
     if not args.depot or not args.destination:
         parser.error("préciser le dépôt source et le dossier de destination")
 
@@ -203,7 +237,9 @@ def main():
                  "Copier anonymisation_exemple.toml à cet emplacement et le compléter.")
 
     pousse = integrer(args, anonym)
-    if pousse and not args.sans_archive:
+    if pousse and args.supprimer:
+        supprimer([args.depot])
+    elif pousse and not args.sans_archive:
         archiver([args.depot])
 
 

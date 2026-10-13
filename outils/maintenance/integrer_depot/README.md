@@ -93,7 +93,8 @@ Déroulement :
 5. copie dans le dossier de destination et commit sous l'identité
    `[identite]` ;
 6. push, puis **archivage** du dépôt source (`gh repo archive`), seulement si
-   le push a réussi.
+   le push a réussi ; avec `--supprimer`, le dépôt source est **supprimé**
+   à la place (voir ci-dessous).
 
 | Option | Rôle |
 |---|---|
@@ -105,12 +106,41 @@ Déroulement :
 | `--sans-archive` | Pousser sans archiver le dépôt source |
 | `--anonymisation FICHIER` | Autre fichier d'anonymisation |
 | `--depot-cible DOSSIER` | Clone d'outils-travail à utiliser (défaut : celui qui contient le script) |
+| `--supprimer` | Supprimer définitivement le dépôt source au lieu de l'archiver |
 | `--archiver-seulement DEPOT…` | Archiver des dépôts déjà intégrés, sans rien intégrer |
+| `--supprimer-seulement DEPOT…` | Supprimer définitivement des dépôts déjà intégrés |
 
 Le script **n'adapte pas le code** : après l'intégration, il reste à passer
 les chemins et paramètres d'étude dans un `config_exemple.toml` lu avec
 `--config`, à écrire le README de l'outil et à l'ajouter au README racine,
 comme pour les autres outils.
+
+## Supprimer les dépôts sources
+
+```bash
+# à l'intégration, à la place de l'archivage
+python outils/maintenance/integrer_depot/integrer_depot.py Ono-coder/mon_depot outils/mon_outil --supprimer
+
+# dépôts déjà intégrés
+python outils/maintenance/integrer_depot/integrer_depot.py --supprimer-seulement Ono-coder/depot1 Ono-coder/depot2
+```
+
+La suppression est **définitive** : code, historique, issues. Les fichiers
+écartés à l'intégration ne sont plus nulle part : anciennes versions,
+documents, fichiers bloqués pour secrets. Pour chaque dépôt, le script
+demande de **retaper son nom complet**. Une réponse vide ou différente laisse
+le dépôt intact. À l'intégration, la suppression n'a lieu qu'après un push
+réussi.
+
+`gh` doit avoir le droit de suppression, à accorder une fois :
+
+```bash
+gh auth refresh -h github.com -s delete_repo
+```
+
+Archiver reste préférable quand le dépôt contient des fichiers non repris
+dans outils-travail : un dépôt archivé est en lecture seule, mais peut être
+désarchivé.
 
 ## Hooks git
 
