@@ -1,0 +1,18 @@
+# Configuration de main_batch.py
+# Usage : python main_batch.py --config config.toml
+# Les paramètres absents sont demandés à l'utilisateur ; les options en ligne
+# de commande restent prioritaires sur ce fichier.
+# Chemins Windows : utiliser des apostrophes simples ('C:\...').
+
+[chemins]
+dossier_slf = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\T2DHI1'   # fichiers time series à traiter
+dossier_csv = 'csv_intermediaires'                                 # CSV produits
+
+[extraction]
+pas_de_temps = 2.0      # s ; un pas de temps extrait toutes les 2 s
+tolerance = 0.05        # s ; écart toléré autour du pas de temps visé
+# index_variable = 0    # sinon la liste est affichée et le choix demandé
+
+[telemac]
+# Dossier scripts/python3 de TELEMAC, si l'environnement TELEMAC n'est pas chargé
+python = 'C:\TELEMAC\V8P5\scripts\python3'

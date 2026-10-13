@@ -1,0 +1,23 @@
+# Fichier PERSONNEL d'anonymisation, à NE PAS mettre dans le dépôt.
+# Copier ce fichier vers :
+#   Windows : %USERPROFILE%\.config\outils-travail\anonymisation.toml
+#   Linux   : ~/.config/outils-travail/anonymisation.toml
+# (ou indiquer son chemin dans la variable OUTILS_TRAVAIL_ANONYMISATION)
+# puis remplacer les exemples ci-dessous par les vrais termes.
+#
+# Les recherches ignorent la casse.
+
+# Termes remplacés dans les fichiers intégrés : "terme" = "remplacement"
+[remplacements]
+"monlogin" = "<utilisateur>"          # identifiant Windows (le <login> de C:\Users\<login>\...)
+"PROJET_CLIENT_2025" = "MON_ETUDE"    # dossiers d'études
+"Prénom NOM" = ""                     # nom dans un en-tête de script
+
+# Termes qui doivent faire échouer l'intégration ou le commit s'ils restent
+[interdits]
+termes = ["monadresse@exemple.fr", "prenomnom"]
+
+# Identité utilisée pour les commits d'intégration
+[identite]
+nom = "MonPseudoGitHub"
+email = "12345678+MonPseudoGitHub@users.noreply.github.com"

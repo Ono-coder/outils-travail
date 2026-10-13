@@ -1,0 +1,16 @@
+# Configuration de vents_era5.py
+# Usage : python vents_era5.py --config config.toml
+# Les options en ligne de commande restent prioritaires sur ce fichier.
+
+[point]
+lat = 48.42          # latitude WGS84
+lon = -4.78          # longitude WGS84
+
+[periode]
+debut = "2000-01-01"
+fin = "2025-12-31"
+fuseau = "Europe/Paris"
+
+[sorties]
+# image = "rose_des_vents.png"   # sinon la figure est affichée
+# csv = "vent_horaire.csv"       # chronique horaire (optionnel)

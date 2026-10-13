@@ -1,0 +1,35 @@
+# Configuration de xyz2tif.py et extraire_xyz_des_zip.py
+# Usage : python xyz2tif.py --config config.toml
+#         python extraire_xyz_des_zip.py --config config.toml
+# Les options en ligne de commande restent prioritaires sur ce fichier.
+# Chemins Windows : utiliser des apostrophes simples ('C:\...').
+
+[chemins]
+dossier = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\xyz'   # dossier des .xyz à convertir
+
+[raster]
+resolution = 1.0             # taille de maille (m)
+epsg = 2154
+nodata = -9999.0
+distance_remplissage = 3     # mailles ; comble les petits trous (0 = désactivé)
+
+[lecture]
+workers = 4                  # processus de lecture en parallèle
+ecraser_existants = true
+# emprise = [xmin, xmax, ymin, ymax]   # ne garder que cette zone (m)
+# plage_z = [zmin, zmax]               # écarter les altitudes aberrantes
+
+# Filtrage des points aberrants (valeurs par défaut adaptées à la plupart des levés)
+# [filtrage]
+# tuile = 256
+# seuil_dense = 32
+# min_points_tuile = 10
+# ecart_max_tuiles = 2
+# part_min_groupe = 0.01
+# densite_rel_min = 0.10
+# min_mailles_groupe = 2000
+
+[extraction_zip]
+source = 'C:\Users\<utilisateur>\Downloads\zip'          # dossier des archives .zip
+destination = 'C:\Users\<utilisateur>\Downloads\xyz'     # dossier des .xyz extraits
+nettoyer = false

@@ -1,0 +1,13 @@
+# Configuration de swissalti3d.py
+# Usage : python swissalti3d.py --config config.toml
+# Les options en ligne de commande restent prioritaires sur ce fichier.
+
+[emprise]
+# xmin, ymin, xmax, ymax en MN95 / LV95 (EPSG:2056)
+lv95 = [2494961, 1145942, 2502877, 1156360]
+
+[telechargement]
+max_items = 1000
+
+[sorties]
+dossier = "./swissalti3d_downloads"

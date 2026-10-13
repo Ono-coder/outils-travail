@@ -8,3 +8,6 @@ venv/
 
 # Configurations locales (voir les config_exemple.toml de chaque outil)
 config.toml
+
+# Fichier personnel d anonymisation (voir outils/maintenance/integrer_depot)
+anonymisation.toml

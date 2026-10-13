@@ -1,0 +1,4 @@
+#!/bin/sh
+# Hook git d'outils-travail : voir ../controle_commit.py
+PY=$(command -v python3 || command -v python || command -v py)
+exec "$PY" "$(dirname "$0")/../controle_commit.py" commit-msg "$@"

@@ -1,0 +1,26 @@
+# Configuration de strickler.py
+# Usage : python strickler.py --config config.toml
+# Chemins Windows : utiliser des apostrophes simples ('C:\...').
+
+[entrees]
+noeuds_shp = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\_Telemac\noeuds_maillage.shp'
+clc_shp = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\_SIG\CLC2018.shp'
+# lit_mineur_shp = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\_SIG\emprise_lit_mineur.shp'
+
+[parametres]
+champ_code_clc = "Code_18"   # champ du code CLC dans la couche polygones
+ks_lit_mineur = 35.0         # Strickler imposé dans le lit mineur (si lit_mineur_shp)
+# Translation appliquée aux coordonnées exportées (L93 -> repère local TELEMAC)
+dx = -1000000.0
+dy = -6800000.0
+
+[sorties]
+csv = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\_Telemac\Strickler.csv'
+separateur = ";"
+decimales_coord = 3
+decimales_ks = 2
+
+# Redéfinition de codes CLC (les autres gardent la table par défaut du script)
+[table_strickler]
+# 231 = 20   # prairies
+# 311 = 12   # forêts de feuillus
