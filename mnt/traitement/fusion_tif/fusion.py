@@ -18,10 +18,13 @@ Usage:
 import os
 import sys
 import argparse
-import tomllib
 import logging
 from pathlib import Path
 import subprocess
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 # ============================================================================
 # CONFIGURATION DU LOGGING

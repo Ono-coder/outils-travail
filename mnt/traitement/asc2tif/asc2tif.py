@@ -4,7 +4,9 @@ asc2tif.py
 Script générique pour convertir tous les fichiers ASC d'un dossier
 en fichiers GeoTIFF (.tif) avec traitement parallèle.
 
-Format supporté: ESRI ASCII Grid (.asc)
+Formats supportés (.asc):
+    - ESRI ASCII Grid (en-tête ncols/nrows) → gdal_translate
+    - Points XYZ "X Y Z" non triés/avec trous → rastérisation (moyenne par cellule)
 
 Usage:
     python asc2tif.py
@@ -20,13 +22,22 @@ Usage:
 import os
 import sys
 import argparse
-import tomllib
 import logging
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 from pathlib import Path
 import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import cpu_count
 import time
+
+import numpy as np
+import pandas as pd
+from osgeo import gdal, osr
+
+gdal.UseExceptions()
 
 # ============================================================================
 # CONFIGURATION DU LOGGING
@@ -86,6 +97,71 @@ def find_gdal_translate(conda_prefix_secours=None):
 # CONVERSION ASC → TIF
 # ============================================================================
 
+NODATA = -9999.0
+
+
+def is_esri_grid(path):
+    """True si le fichier a un en-tête ESRI ASCII Grid (ncols, nrows...)"""
+    with open(path, 'r', errors='ignore') as f:
+        first = f.readline().strip().lower()
+    return first.startswith('ncols')
+
+
+def detect_resolution(values):
+    """Résolution = écart le plus fréquent entre coordonnées uniques successives"""
+    u = np.unique(np.round(values, 3))
+    if len(u) < 2:
+        return 1.0
+    d = np.round(np.diff(u), 3)
+    d = d[d > 0]
+    vals, counts = np.unique(d, return_counts=True)
+    return float(vals[np.argmax(counts)])
+
+
+def convert_xyz(input_path, output_path, compression, epsg):
+    """
+    Rastérise un fichier de points XYZ (X Y Z, non trié, avec trous)
+    en GeoTIFF. Plusieurs points dans une même cellule → moyenne.
+    """
+    df = pd.read_csv(input_path, sep=r'\s+', header=None, usecols=[0, 1, 2],
+                     names=['x', 'y', 'z'], dtype=np.float64, engine='c')
+    x, y, z = df['x'].to_numpy(), df['y'].to_numpy(), df['z'].to_numpy()
+
+    res = min(detect_resolution(x), detect_resolution(y))
+
+    # Les coordonnées sont des centres de cellules
+    xmin, ymax = x.min(), y.max()
+    col = np.rint((x - xmin) / res).astype(np.int64)
+    row = np.rint((ymax - y) / res).astype(np.int64)
+    ncols, nrows = int(col.max()) + 1, int(row.max()) + 1
+
+    idx = row * ncols + col
+    sums = np.bincount(idx, weights=z, minlength=nrows * ncols)
+    counts = np.bincount(idx, minlength=nrows * ncols)
+    grid = np.full(nrows * ncols, NODATA, dtype=np.float32)
+    mask = counts > 0
+    grid[mask] = (sums[mask] / counts[mask]).astype(np.float32)
+    grid = grid.reshape(nrows, ncols)
+
+    driver = gdal.GetDriverByName('GTiff')
+    options = ['TILED=YES', 'BLOCKXSIZE=512', 'BLOCKYSIZE=512', 'BIGTIFF=IF_SAFER']
+    if compression != 'NONE':
+        options += [f'COMPRESS={compression}', 'PREDICTOR=3']
+    ds = driver.Create(str(output_path), ncols, nrows, 1, gdal.GDT_Float32, options)
+    ds.SetGeoTransform((xmin - res / 2, res, 0, ymax + res / 2, 0, -res))
+    if epsg:
+        srs = osr.SpatialReference()
+        srs.ImportFromEPSG(int(epsg))
+        ds.SetProjection(srs.ExportToWkt())
+    band = ds.GetRasterBand(1)
+    band.SetNoDataValue(NODATA)
+    band.WriteArray(grid)
+    band.FlushCache()
+    ds = None
+
+    return res, nrows, ncols, len(z)
+
+
 def convert_single_asc(args):
     """
     Convertit un seul fichier ASC en TIF
@@ -110,7 +186,16 @@ def convert_single_asc(args):
         if output_path.exists() and output_path.stat().st_size > 1000:
             size_mb = output_path.stat().st_size / (1024*1024)
             return True, output_filename, f"Déjà converti ({size_mb:.1f}MB)", 0
-        
+
+        # Fichier de points XYZ (pas d'en-tête ESRI) → rastérisation numpy
+        if not is_esri_grid(input_path):
+            res, nrows, ncols, npts = convert_xyz(input_path, output_path, compression, epsg)
+            processing_time = time.time() - start_time
+            input_size = input_path.stat().st_size / (1024*1024)
+            output_size = output_path.stat().st_size / (1024*1024)
+            return True, output_filename, (f"XYZ {npts} pts, rés. {res}m, {ncols}x{nrows} px - "
+                                           f"{input_size:.1f}MB→{output_size:.1f}MB en {processing_time:.1f}s"), processing_time
+
         # Construire la commande gdal_translate
         cmd = [
             gdal_translate_path,
@@ -305,6 +390,9 @@ Exemples:
   
   # Avec plus de workers
   python asc2tif.py --workers 8
+
+  # Avec un fichier de configuration
+  python asc2tif.py --config config.toml
         """
     )
     

@@ -10,8 +10,9 @@ Chaque outil a son dossier, avec un README qui détaille son utilisation.
 | | [`dgm1`](mnt/telechargement/dgm1/) | MNT DGM1 du Bade-Wurtemberg (LGL-BW) sur une emprise GeoPackage |
 | | [`rge_alti`](mnt/telechargement/rge_alti/) | Extraction des dalles RGE ALTI 1 m d'une archive `.7z` sur une emprise |
 | **MNT — traitement** | [`fusion_tif`](mnt/traitement/fusion_tif/) | Mosaïque des GeoTIFF d'un dossier |
-| | [`asc2tif`](mnt/traitement/asc2tif/) | Conversion ESRI ASCII Grid → GeoTIFF |
+| | [`asc2tif`](mnt/traitement/asc2tif/) | Conversion `.asc` (ESRI ASCII Grid ou points XYZ) → GeoTIFF |
 | | [`lacunes_raster`](mnt/traitement/lacunes_raster/) | Comblement des NoData d'un raster, par tuiles |
+| | [`calcul_rasters`](mnt/traitement/calcul_rasters/) | Calcul entre deux rasters partiellement superposés (différence, moyenne…) |
 | **MNT — analyse** | [`hsv`](mnt/analyse/hsv/) | Loi hauteur / surface / volume d'une retenue |
 | **TELEMAC — pré-traitement** | [`bathy_calage`](telemac/pre_traitement/bathy_calage/) | Bathymétrie aux nœuds du maillage à partir de sources priorisées |
 | **TELEMAC — post-traitement** | [`hmax_lidar`](telemac/post_traitement/hmax_lidar/) | Hauteur d'eau maximale projetée sur le LiDAR HD |

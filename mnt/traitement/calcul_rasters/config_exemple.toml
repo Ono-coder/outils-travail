@@ -1,0 +1,33 @@
+# Configuration de calcul_rasters.py
+# Usage : python calcul_rasters.py --config config.toml
+# Les options passées en ligne de commande restent prioritaires sur ce fichier.
+#
+# Chemins Windows : utiliser des apostrophes simples ('C:\...').
+
+[chemins]
+raster_a = './a.tif'        # raster A (sa grille sert de référence)
+raster_b = './b.tif'        # raster B
+sortie   = './difference.tif'      # raster de sortie
+
+[calcul]
+# difference (A - B), addition, multiplication, division, moyenne,
+# minimum, maximum, a, b
+operation = 'difference'
+# Expression numpy en a et b, remplace "operation" si renseignée
+# ex. 'np.abs(a - b)'  ou  'np.where(a > b, a, b)'
+expression = 'a-(b+0.047)'
+emprise    = 'intersection'               # union, intersection, a, b
+resampling = 'bilinear'            # near, bilinear, cubic, average
+# nodata_a = -9999                 # forcer le NoData de A
+# nodata_b = 0                     # forcer le NoData de B
+
+[hors_recouvrement]
+# Comportement là où un seul raster est valide :
+#   nodata    → NoData
+#   conserver → valeur du raster présent
+#   constante → valeur fixe "valeur"
+#   remplacer → le raster absent vaut "valeur" puis l'opération est appliquée
+mode   = 'nodata'
+# seul_a = 'conserver'             # remplace "mode" là où seul A est valide
+# seul_b = 'nodata'                # remplace "mode" là où seul B est valide
+valeur = 0.0
