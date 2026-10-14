@@ -1,0 +1,44 @@
+# Configuration de projection_crete_digue.py
+# Usage : python projection_crete_digue.py --config config.toml
+# Les options passées en ligne de commande restent prioritaires sur ce fichier.
+# Une clé absente reprend sa valeur par défaut (indiquée en commentaire).
+# Chemins Windows : utiliser des apostrophes simples ('C:\...').
+
+[entrees]
+axe = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\SIG\axe_canal.gpkg'      # axe portant les PK (obligatoire)
+crete = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\SIG\crete_digue.gpkg'  # ligne de crête (obligatoire)
+mnt = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\SIG\mnt.tif'             # MNT, et non MNS (obligatoire)
+# couche_axe = "axe"           # couche à lire si le fichier en contient plusieurs
+# couche_crete = "crete_RD"
+# crs_mnt = "EPSG:2154"        # force le système du MNT (CRS dégradé type LOCAL_CS)
+# ignorer_crs = false          # ne pas vérifier la cohérence des systèmes
+# ligne_eau = 'ligne_eau.csv'  # CSV pk,z (PK officiels en m) -> calcul de la revanche
+
+[pk]
+# Bornes PK réelles : PK recalés intervalle par intervalle (écart variable
+# entre bornes). Sans bornes : PK = pk_origine + distance le long de l'axe.
+bornes = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\SIG\bornes_pk.gpkg'
+# couche_bornes = "bornes"
+# champ_pk = "PK"              # défaut : champ pk, pk_km, borne... détecté
+unite_bornes = "km"            # "km" ou "m"
+# pk_origine = 0.0             # décalage constant, seulement sans bornes
+# inverser_axe = false         # PK croissants vers l'amont
+
+[echantillonnage]
+pas_crete = 0.5                # m, pas le long de la crête
+demi_largeur = 4.0             # m, demi-largeur de la bande transversale
+pas_transversal = 0.25         # m, <= résolution du MNT
+lissage_tangente = 10.0        # m
+lissage_axe = 50.0             # m, 0 = aucun
+# distance_max = 150.0         # m, rejette les points de crête trop loin de l'axe
+
+[profil]
+pas_pk = 5.0                   # m de PK par tranche du profil (1.0 = millième de km)
+angle_max = 60.0               # degrés : au-delà, tronçon perpendiculaire (retour de digue)
+longueur_min_retour = 10.0     # m
+retours = "signaler"           # "signaler", "exclure" ou "separer"
+pas_qa_bandes = 25.0           # m
+axe_km = true                  # axe des PK du graphique en km
+
+[sorties]
+dossier = './resultats'

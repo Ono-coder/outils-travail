@@ -34,7 +34,7 @@ Sorties :
 
 Dependances : numpy, pandas, geopandas, shapely>=2, rasterio, matplotlib
 
-Exemple :
+Exemple (ou avec un fichier de configuration : --config config.toml) :
   python projection_crete_digue.py --axe axe_profil_long.shp --crete crete_digue_RD.shp \
       --mnt mnt_lidar.tif --pas-crete 0.5 --demi-largeur 4 --pas-transversal 0.25 \
       --lissage-axe 50 --pas-pk 5 --angle-max 70 --longueur-min-retour 10 --retours exclure
@@ -44,6 +44,11 @@ import argparse
 import os
 import sys
 import warnings
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 import numpy as np
 import pandas as pd
@@ -643,14 +648,58 @@ def traiter(args):
     return df, prof
 
 
+# Sections et cles du fichier de configuration -> options de la ligne de commande
+CLES_CONFIG = {
+    "entrees": {"axe": "axe", "couche_axe": "couche_axe", "crete": "crete",
+                "couche_crete": "couche_crete", "mnt": "mnt", "crs_mnt": "crs_mnt",
+                "ignorer_crs": "ignorer_crs", "ligne_eau": "ligne_eau"},
+    "pk": {"bornes": "bornes", "couche_bornes": "couche_bornes", "champ_pk": "champ_pk",
+           "unite_bornes": "unite_bornes", "pk_origine": "pk_origine",
+           "inverser_axe": "inverser_axe"},
+    "echantillonnage": {"pas_crete": "pas_crete", "demi_largeur": "demi_largeur",
+                        "pas_transversal": "pas_transversal",
+                        "lissage_tangente": "lissage_tangente", "lissage_axe": "lissage_axe",
+                        "distance_max": "distance_max"},
+    "profil": {"pas_pk": "pas_pk", "angle_max": "angle_max",
+               "longueur_min_retour": "longueur_min_retour", "retours": "retours",
+               "pas_qa_bandes": "pas_qa_bandes", "axe_km": "axe_km"},
+    "sorties": {"dossier": "sortie"},
+}
+
+
+def lire_config(chemin, parser):
+    """Lit le TOML et renvoie {option: valeur} ; erreur sur une cle inconnue."""
+    try:
+        with open(chemin, "rb") as f:
+            cfg = tomllib.load(f)
+    except FileNotFoundError:
+        parser.error(f"fichier de configuration introuvable : {chemin}")
+    except tomllib.TOMLDecodeError as e:
+        parser.error(f"fichier de configuration invalide ({chemin}) : {e}")
+    valeurs = {}
+    for section, contenu in cfg.items():
+        if section not in CLES_CONFIG or not isinstance(contenu, dict):
+            parser.error(f"section inconnue dans {chemin} : [{section}] "
+                         f"(attendues : {', '.join(CLES_CONFIG)})")
+        for cle, valeur in contenu.items():
+            if cle not in CLES_CONFIG[section]:
+                parser.error(f"cle inconnue dans {chemin} : [{section}] {cle} "
+                             f"(attendues : {', '.join(CLES_CONFIG[section])})")
+            valeurs[CLES_CONFIG[section][cle]] = valeur
+    return valeurs
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(
         description="Projection de la crete de digue sur le profil en long d'une riviere",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument("--axe", required=True,
+    p.add_argument("--config", default=None,
+                   help="Fichier de configuration TOML (voir config_exemple.toml) ; "
+                        "les options en ligne de commande restent prioritaires")
+    p.add_argument("--axe",
                    help="Vecteur de l'axe de reference portant les PK (ligne d'eau / axe hydraulique)")
-    p.add_argument("--crete", required=True, help="Vecteur de la ligne de crete de digue")
-    p.add_argument("--mnt", required=True, help="MNT (GeoTIFF/VRT) - MNT et non MNS")
+    p.add_argument("--crete", help="Vecteur de la ligne de crete de digue")
+    p.add_argument("--mnt", help="MNT (GeoTIFF/VRT) - MNT et non MNS")
     p.add_argument("--couche-axe", default=None)
     p.add_argument("--couche-crete", default=None)
     p.add_argument("--crs-mnt", default=None,
@@ -703,7 +752,21 @@ def main(argv=None):
     p.add_argument("--pas-qa-bandes", type=float, default=25.0,
                    help="Pas d'export des bandes de controle (m)")
     p.add_argument("--sortie", default="./resultats")
+    # Fichier de configuration : ses valeurs remplacent les defauts, la ligne
+    # de commande reste prioritaire
+    args_config, _ = p.parse_known_args(argv)
+    if args_config.config:
+        p.set_defaults(**lire_config(args_config.config, p))
     args = p.parse_args(argv)
+
+    for nom in ("axe", "crete", "mnt"):
+        if not getattr(args, nom):
+            p.error(f"--{nom} obligatoire (ou [entrees] {nom} dans la configuration)")
+    # set_defaults contourne la verification des choix d'argparse
+    for action in p._actions:
+        valeur = getattr(args, action.dest, None)
+        if action.choices and valeur is not None and valeur not in action.choices:
+            p.error(f"{action.dest} = {valeur!r} invalide (choix : {', '.join(action.choices)})")
 
     if args.pas_transversal <= 0 or args.pas_crete <= 0:
         sys.exit("Les pas doivent etre strictement positifs.")

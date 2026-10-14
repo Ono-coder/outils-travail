@@ -34,8 +34,33 @@ python projection_crete_digue.py --axe axe_profil_long.shp --crete crete_digue_R
     --lissage-axe 50 --pas-pk 5 --angle-max 70 --longueur-min-retour 10 --retours exclure
 ```
 
+Ou avec un fichier de configuration, plus pratique vu le nombre d'options :
+
+```bash
+cp config_exemple.toml config.toml   # puis adapter config.toml
+python projection_crete_digue.py --config config.toml
+python projection_crete_digue.py --config config.toml --pas-pk 1   # une option ponctuelle
+```
+
+Les options passées en ligne de commande l'emportent sur le fichier. Une clé
+mal orthographiée ou une valeur invalide arrête le programme avec un message
+explicite. Correspondance entre les options et les clés du fichier :
+
+| Section | Clés (option correspondante : `cle` → `--cle` avec des tirets) |
+|---|---|
+| `[entrees]` | `axe`, `couche_axe`, `crete`, `couche_crete`, `mnt`, `crs_mnt`, `ignorer_crs`, `ligne_eau` |
+| `[pk]` | `bornes`, `couche_bornes`, `champ_pk`, `unite_bornes`, `pk_origine`, `inverser_axe` |
+| `[echantillonnage]` | `pas_crete`, `demi_largeur`, `pas_transversal`, `lissage_tangente`, `lissage_axe`, `distance_max` |
+| `[profil]` | `pas_pk`, `angle_max`, `longueur_min_retour`, `retours`, `pas_qa_bandes`, `axe_km` |
+| `[sorties]` | `dossier` (→ `--sortie`) |
+
+Les options oui/non (`ignorer_crs`, `inverser_axe`, `axe_km`) activées dans le
+fichier ne peuvent pas être désactivées en ligne de commande : les modifier
+dans le fichier.
+
 | Option | Rôle | Défaut |
 |---|---|---|
+| `--config` | Fichier de configuration TOML | aucun |
 | `--axe` | Ligne de l'axe de référence portant les PK — obligatoire | — |
 | `--crete` | Ligne de crête de digue — obligatoire | — |
 | `--mnt` | MNT (GeoTIFF ou VRT) — obligatoire | — |
