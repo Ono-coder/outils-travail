@@ -3,7 +3,7 @@
 Fusion des CSV intermédiaires (extraction TELEMAC par sous-domaine) en un
 fichier Excel unique, avec identification des points de contrôle.
 
-- Lit la liste de points (ex. time_series_ERC_U1.txt : x  y  id  nom)
+- Lit la liste de points (fichier de time series TELEMAC : x  y  id  nom)
 - Pour chaque point configuré, recherche la colonne (nœud X..._Y...) la plus
   proche, à moins de DIST_MAX mètres.
 - En-tête du fichier fusionné :
@@ -14,8 +14,13 @@ fichier Excel unique, avec identification des points de contrôle.
   "Correspondance") et apparaissent en colonne vide marquée "MANQUANT".
 
 Usage :
-    python fusion_v3.py [fichier_points] [dossier_csv] [sortie.xlsx]
+    python fusion_csv.py [fichier_points] [dossier_csv] [sortie.xlsx] [--dist-max 100]
+    python fusion_csv.py --config config.toml
+    python fusion_csv.py --config config.toml --sortie autre.xlsx --dist-max 50
+Les arguments en ligne de commande restent prioritaires sur le fichier de
+configuration, lui-même prioritaire sur les valeurs par défaut.
 """
+import argparse
 import csv
 import glob
 import math
@@ -23,6 +28,11 @@ import os
 import re
 import sys
 from collections import defaultdict
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 try:
     from openpyxl import Workbook
@@ -34,9 +44,9 @@ except ImportError:
 # --------------------------------------------------------------------------- #
 #  Paramètres par défaut                                                      #
 # --------------------------------------------------------------------------- #
-POINTS_FILE  = "time_series_ERC_U1.txt"
+POINTS_FILE  = "time_series.txt"
 INPUT_FOLDER = "csv_intermediaires"
-OUTPUT_XLSX  = "fusion_ERC_U1.xlsx"
+OUTPUT_XLSX  = "fusion_time_series.xlsx"
 DIST_MAX     = 100.0   # m : distance max entre point configuré et nœud retenu
 
 COL_RE = re.compile(r"^X(-?[\d.]+)_Y(-?[\d.]+)$")
@@ -219,10 +229,43 @@ def exporter_xlsx(output_xlsx, points, all_data, coords, non_associees):
 
 
 # --------------------------------------------------------------------------- #
+def lire_arguments():
+    """Ligne de commande > fichier de configuration > valeurs par défaut."""
+    parser = argparse.ArgumentParser(
+        description="Fusion des CSV de main_batch.py en un Excel, avec le nom des points de contrôle")
+    # Positionnels (ordre : points, dossier, sortie) ou options nommées équivalentes
+    parser.add_argument("pos", nargs="*", metavar="[points] [dossier_csv] [sortie]",
+                        help="Arguments positionnels, dans cet ordre (facultatifs)")
+    parser.add_argument("--points", help=f"Fichier de time series TELEMAC (défaut : {POINTS_FILE})")
+    parser.add_argument("--dossier-csv", help=f"Dossier des CSV à fusionner (défaut : {INPUT_FOLDER})")
+    parser.add_argument("--sortie", help=f"Classeur Excel produit (défaut : {OUTPUT_XLSX})")
+    parser.add_argument("--dist-max", type=float,
+                        help=f"Distance max point configuré / nœud retenu, en m (défaut : {DIST_MAX:g})")
+    parser.add_argument("--config", help="Fichier de configuration TOML (voir config_exemple.toml)")
+    args = parser.parse_args()
+    if len(args.pos) > 3:
+        parser.error("au plus trois arguments positionnels : points, dossier_csv, sortie")
+    pos = args.pos + [None] * (3 - len(args.pos))
+    args.points = args.points or pos[0]
+    args.dossier_csv = args.dossier_csv or pos[1]
+    args.sortie = args.sortie or pos[2]
+
+    cfg = {}
+    if args.config:
+        with open(args.config, "rb") as f:
+            cfg = tomllib.load(f)
+    chemins = cfg.get("chemins", {})
+    fusion = cfg.get("fusion", {})
+
+    points_file  = args.points or fusion.get("fichier_points", POINTS_FILE)
+    input_folder = args.dossier_csv or chemins.get("dossier_csv", INPUT_FOLDER)
+    output_xlsx  = args.sortie or fusion.get("sortie_xlsx", OUTPUT_XLSX)
+    dist_max     = args.dist_max if args.dist_max is not None else float(fusion.get("dist_max", DIST_MAX))
+    return points_file, input_folder, output_xlsx, dist_max
+
+
 def main():
-    points_file  = sys.argv[1] if len(sys.argv) > 1 else POINTS_FILE
-    input_folder = sys.argv[2] if len(sys.argv) > 2 else INPUT_FOLDER
-    output_xlsx  = sys.argv[3] if len(sys.argv) > 3 else OUTPUT_XLSX
+    points_file, input_folder, output_xlsx, dist_max = lire_arguments()
 
     if not os.path.exists(points_file):
         print(f"❌ Fichier de points introuvable : {points_file}")
@@ -237,13 +280,13 @@ def main():
         sys.exit(1)
     coords = coords_colonnes(all_columns)
 
-    non_associees = associer(points, coords, DIST_MAX)
+    non_associees = associer(points, coords, dist_max)
 
     # ---- Bilan console --------------------------------------------------- #
     manquants = [p for p in points if p["col"] is None]
     partages = [p for p in points if p["statut"].startswith("OK (")]
     print("\n" + "=" * 60)
-    print(f"🔎 ASSOCIATION DES POINTS (distance max {DIST_MAX:.0f} m)")
+    print(f"🔎 ASSOCIATION DES POINTS (distance max {dist_max:.0f} m)")
     print(f"  ✅ Trouvés   : {len(points) - len(manquants)}/{len(points)}")
     print(f"  ❌ Manquants : {len(manquants)}")
     for p in manquants:

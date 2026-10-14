@@ -1,5 +1,6 @@
-# Configuration de main_batch.py
+# Configuration de main_batch.py et fusion_csv.py
 # Usage : python main_batch.py --config config.toml
+#         python fusion_csv.py --config config.toml
 # Les paramètres absents sont demandés à l'utilisateur ; les options en ligne
 # de commande restent prioritaires sur ce fichier.
 # Chemins Windows : utiliser des apostrophes simples ('C:\...').
@@ -16,3 +17,10 @@ tolerance = 0.05        # s ; écart toléré autour du pas de temps visé
 [telemac]
 # Dossier scripts/python3 de TELEMAC, si l'environnement TELEMAC n'est pas chargé
 python = 'C:\TELEMAC\V8P5\scripts\python3'
+
+[fusion]
+# Fichier de time series donné à TELEMAC (lignes "x y id nom") : sert à
+# retrouver le nom de chaque point dans les colonnes X..._Y... des CSV
+fichier_points = 'time_series.txt'
+sortie_xlsx = 'fusion_time_series.xlsx'
+dist_max = 100.0        # m ; au-delà, le point est signalé MANQUANT

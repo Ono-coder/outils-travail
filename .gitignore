@@ -6,6 +6,9 @@ venv/
 .idea/
 *.log
 *.toml
+# ... sauf les modèles publiés avec les outils
+!config_exemple.toml
+!anonymisation_exemple.toml
 
 # Configurations locales (voir les config_exemple.toml de chaque outil)
 config.toml

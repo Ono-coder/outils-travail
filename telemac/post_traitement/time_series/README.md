@@ -13,7 +13,7 @@ TELEMAC n'a pas pu fusionner les fichiers partiels d'un calcul parallèle.
 |---|---|
 | `extract_time_series.py` | Exporte le fichier Selafin de time series en CSV |
 | `main_batch.py` + `sous_programme.py` | Extraction par lot des fichiers partiels `T2DHI1`, un CSV par fichier |
-| `fusion_csv.py` | Fusionne les CSV produits par `main_batch.py` |
+| `fusion_csv.py` | Fusionne les CSV produits par `main_batch.py` en un classeur Excel, avec le nom des points |
 
 ## Prérequis
 
@@ -99,13 +99,32 @@ toujours compilé. Les scripts suivants le remplacent.
    0,05 s : adapter `--pas` et `--tolerance` au modèle. Le premier et le
    dernier pas de temps sont toujours conservés.
 
-3. Fusionner les CSV en un seul fichier :
+3. Fusionner les CSV en un classeur Excel, en retrouvant le nom de chaque
+   point à partir du fichier de time series donné à TELEMAC :
 
    ```bash
-   python fusion_csv.py --entree csv_intermediaires --sortie fusion.csv
+   python fusion_csv.py --config config.toml
+   # ou
+   python fusion_csv.py time_series.txt csv_intermediaires fusion.xlsx --dist-max 100
    ```
 
-Dans le fichier fusionné, les colonnes sont nommées `X<x>_Y<y>` et
-**triées par ordre alphabétique** de ces noms. Pour retrouver les noms des
-points, faire la correspondance avec les coordonnées du fichier de time
-series donné à TELEMAC (par exemple en le triant dans Excel).
+   | Option | Clé TOML | Rôle | Défaut |
+   |---|---|---|---|
+   | `--points` (1er positionnel) | `[fusion] fichier_points` | Fichier de time series TELEMAC (lignes `x y id nom`) | `time_series.txt` |
+   | `--dossier-csv` (2e positionnel) | `[chemins] dossier_csv` | Dossier des CSV de `main_batch.py` | `csv_intermediaires` |
+   | `--sortie` (3e positionnel) | `[fusion] sortie_xlsx` | Classeur Excel produit | `fusion_time_series.xlsx` |
+   | `--dist-max` | `[fusion] dist_max` | Distance maximale (m) entre un point et le nœud retenu | 100 |
+
+   Le même `config.toml` sert à `main_batch.py` et à `fusion_csv.py`. Les
+   options en ligne de commande l'emportent sur le fichier.
+
+   Chaque point du fichier de time series est associé à la colonne
+   `X…_Y…` (nœud) la plus proche. Le classeur contient deux feuilles :
+   - **Donnees** : trois lignes d'en-tête (X et Y du nœud, nom du point),
+     puis une ligne par pas de temps. Les points sans nœud à moins de
+     `dist_max` apparaissent en colonne vide marquée `MANQUANT` ; les nœuds
+     associés à aucun point sont ajoutés en fin de tableau (`NON_ASSOCIE`) ;
+   - **Correspondance** : pour chaque point, le nœud retenu, la distance et
+     le statut (y compris les nœuds partagés par plusieurs points).
+
+   `pip install openpyxl` est nécessaire.
