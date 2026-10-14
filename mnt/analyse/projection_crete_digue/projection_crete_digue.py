@@ -56,6 +56,7 @@ from shapely.ops import linemerge, unary_union
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.ticker
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +181,85 @@ def echantillonner_mnt(src, X, Y, bande=1):
 # Traitement principal
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Recalage des PK sur les bornes reelles
+# ---------------------------------------------------------------------------
+
+NOMS_CHAMP_PK = ("pk", "pk_km", "pk_m", "borne", "num_borne", "numero")
+
+
+def charger_bornes(args, axe, crs_axe):
+    """Projette les bornes sur l'axe brut.
+
+    Renvoie (s_bornes, pk_bornes, etiquettes, distances) tries le long de
+    l'axe, pk en metres. Les bornes doivent etre dans le meme ordre le long
+    de l'axe que leurs PK (tous croissants ou tous decroissants).
+    """
+    gdf = gpd.read_file(args.bornes, layer=args.couche_bornes) if args.couche_bornes \
+        else gpd.read_file(args.bornes)
+    gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty]
+    if gdf.empty:
+        raise ValueError(f"Aucune borne dans {args.bornes}")
+    if crs_axe is not None and gdf.crs is not None and gdf.crs != crs_axe:
+        gdf = gdf.to_crs(crs_axe)
+
+    champ = args.champ_pk
+    if champ is None:
+        par_nom = {c.lower(): c for c in gdf.columns if c != "geometry"}
+        champ = next((par_nom[n] for n in NOMS_CHAMP_PK if n in par_nom), None)
+    if champ is None or champ not in gdf.columns:
+        raise ValueError(
+            f"Champ du PK introuvable dans {args.bornes} : preciser --champ-pk "
+            f"(champs disponibles : {', '.join(c for c in gdf.columns if c != 'geometry')})")
+    valeurs = pd.to_numeric(gdf[champ].astype(str).str.replace(",", "."), errors="coerce")
+    if valeurs.isna().any():
+        raise ValueError(f"Valeurs non numeriques dans le champ {champ} : "
+                         f"{gdf.loc[valeurs.isna(), champ].tolist()}")
+
+    points = [g if g.geom_type == "Point" else g.centroid for g in gdf.geometry]
+    s = np.array([axe.project(p) for p in points])
+    dist = np.array([axe.distance(p) for p in points])
+    pk = valeurs.to_numpy(dtype=float) * (1000.0 if args.unite_bornes == "km" else 1.0)
+    etiquettes = gdf[champ].astype(str).to_numpy()
+
+    ordre = np.argsort(s)
+    s, pk, etiquettes, dist = s[ordre], pk[ordre], etiquettes[ordre], dist[ordre]
+    if np.any(np.diff(s) <= 0):
+        raise ValueError("Deux bornes se projettent au meme endroit de l'axe : "
+                         "verifier les doublons ou une borne mal placee.")
+    if len(pk) > 1:
+        d = np.diff(pk)
+        if not (np.all(d > 0) or np.all(d < 0)):
+            i = int(np.argmax(np.sign(d) != np.sign(d[0]))) + 1
+            raise ValueError(
+                f"Les PK des bornes ne varient pas dans un seul sens le long de l'axe "
+                f"(probleme vers la borne {etiquettes[i]}) : borne mal placee, mal "
+                f"numerotee, ou trop loin de l'axe.")
+    return s, pk, etiquettes, dist
+
+
+def recaler_pk(s, s_b, pk_b):
+    """PK officiel (m) des abscisses s de l'axe brut.
+
+    Entre deux bornes : interpolation lineaire (l'ecart reel entre bornes est
+    respecte). Avant la premiere et apres la derniere : 1 m de PK par metre
+    d'axe, a partir de la borne la plus proche.
+    Renvoie aussi le facteur local dPK/ds (1 hors bornes).
+    """
+    sens = 1.0 if len(pk_b) < 2 or pk_b[-1] > pk_b[0] else -1.0
+    if len(s_b) == 1:
+        return pk_b[0] + sens * (s - s_b[0]), np.ones_like(s)
+    pk = np.interp(s, s_b, pk_b)
+    avant, apres = s < s_b[0], s > s_b[-1]
+    pk[avant] = pk_b[0] + sens * (s[avant] - s_b[0])
+    pk[apres] = pk_b[-1] + sens * (s[apres] - s_b[-1])
+    pentes = np.abs(np.diff(pk_b) / np.diff(s_b))
+    i = np.clip(np.searchsorted(s_b, s) - 1, 0, len(pentes) - 1)
+    facteur = pentes[i]
+    facteur[avant | apres] = 1.0
+    return pk, facteur
+
+
 def traiter(args):
     os.makedirs(args.sortie, exist_ok=True)
 
@@ -276,7 +356,19 @@ def traiter(args):
     else:
         pk = s_lisse
         derive = 0.0
-    pk = pk + args.pk_origine
+    abscisse_axe = pk.copy()
+
+    # PK officiels : recales sur les bornes (ecart variable entre bornes), ou
+    # simple decalage a l'origine
+    bornes = None
+    if args.bornes:
+        s_b, pk_b, etiq_b, dist_b = charger_bornes(args, axe, crs_axe)
+        pk, facteur_pk = recaler_pk(abscisse_axe, s_b, pk_b)
+        bornes = pd.DataFrame({"borne": etiq_b, "pk_officiel": pk_b,
+                               "abscisse_axe": s_b, "distance_axe": dist_b})
+    else:
+        pk = pk + args.pk_origine
+        facteur_pk = np.ones_like(pk)
 
     # Angle local entre la tangente de la crete et celle de l'axe.
     # 0 deg = crete parallele a la riviere (cas nominal).
@@ -293,6 +385,7 @@ def traiter(args):
     # --- 5. Controle qualite ----------------------------------------------
     df = pd.DataFrame({
         "pk": pk,
+        "abscisse_axe": abscisse_axe,
         "x": xy[:, 0], "y": xy[:, 1],
         "z_crete": z_crete,
         "z_ligne_numerisee": z_ligne,
@@ -300,6 +393,7 @@ def traiter(args):
         "distance_axe": deport_axe,
         "angle_axe": angle_axe,
         "n_pixels_valides": n_valides,
+        "facteur_pk": facteur_pk,
     })
     df["gain_vs_ligne"] = df["z_crete"] - df["z_ligne_numerisee"]
 
@@ -369,12 +463,14 @@ def traiter(args):
         "n_points": g["z_crete"].size(),
         "distance_axe_moy": g["distance_axe"].mean(),
         "angle_axe_median": g["angle_axe"].median(),
+        "facteur_pk": g["facteur_pk"].mean(),
     })
     # Lineaire de crete reellement represente par chaque pas de PK.
     # Un taux de compression >> 1 signale que le profil comprime beaucoup de
     # digue sur peu de PK : le point bas affiche peut etre un ouvrage transverse.
     prof["lineaire_crete"] = prof["n_points"] * args.pas_crete
-    prof["compression"] = prof["lineaire_crete"] / args.pas_pk
+    # longueur reelle d'axe couverte par la tranche (pas_pk / facteur avec bornes)
+    prof["compression"] = prof["lineaire_crete"] / (args.pas_pk / prof["facteur_pk"])
     prof["pk_du_min"] = g.apply(
         lambda x: x.loc[x["z_crete"].idxmin(), "pk"], include_groups=False
     ).sort_index().values
@@ -398,6 +494,20 @@ def traiter(args):
     f_prof = os.path.join(args.sortie, "profil_crete_pk.csv")
     df.to_csv(f_pts, index=False, float_format="%.3f")
     prof.to_csv(f_prof, index=False, float_format="%.3f")
+
+    if bornes is not None:
+        intervalles = pd.DataFrame({
+            "borne_debut": bornes["borne"].to_numpy()[:-1],
+            "borne_fin": bornes["borne"].to_numpy()[1:],
+            "pk_officiel_m": np.abs(np.diff(bornes["pk_officiel"])),
+            "longueur_axe_m": np.diff(bornes["abscisse_axe"]),
+        })
+        intervalles["ecart_m"] = intervalles["longueur_axe_m"] - intervalles["pk_officiel_m"]
+        intervalles["ecart_pct"] = 100 * intervalles["ecart_m"] / intervalles["pk_officiel_m"]
+        bornes.to_csv(os.path.join(args.sortie, "bornes_recalage.csv"),
+                      index=False, float_format="%.3f")
+        intervalles.to_csv(os.path.join(args.sortie, "bornes_intervalles.csv"),
+                           index=False, float_format="%.3f")
 
     if not plages.empty:
         plages.to_csv(os.path.join(args.sortie, "retours_digue.csv"),
@@ -442,7 +552,22 @@ def traiter(args):
                        hatch="//", lw=0, zorder=0)
         ax.axvspan(np.nan, np.nan, color="0.5", alpha=0.30, hatch="//", lw=0,
                    label="Crete perpendiculaire a l'axe (retour de digue)")
-    ax.set_xlabel("PK sur l'axe de reference (m)")
+    if bornes is not None:
+        tol = args.pas_pk
+        x_min, x_max = d["pk"].min() - tol, d["pk"].max() + tol
+        for _, b in bornes.iterrows():
+            if x_min <= b["pk_officiel"] <= x_max:
+                ax.axvline(b["pk_officiel"], color="0.35", lw=0.8, ls=":", zorder=1)
+                ax.annotate(f"PK {b['borne']}", (b["pk_officiel"], 1.0),
+                            xycoords=("data", "axes fraction"), xytext=(2, -2),
+                            textcoords="offset points", rotation=90,
+                            va="top", ha="left", fontsize=8, color="0.25")
+    unite = "km" if args.axe_km else "m"
+    if args.axe_km:
+        ax.xaxis.set_major_formatter(
+            matplotlib.ticker.FuncFormatter(lambda v, _: f"{v / 1000:g}"))
+    ax.set_xlabel(f"PK ({unite})" + (" - recales sur les bornes" if bornes is not None
+                                      else " sur l'axe de reference"))
     ax.set_ylabel("Cote (m)")
     ax.set_title("Profil en long - crete de digue projetee sur l'axe hydraulique")
     ax.grid(alpha=0.3)
@@ -460,6 +585,20 @@ def traiter(args):
     print(f"Derive de PK corrigee    : {derive:.1f} m max "
           f"(PK exprimes sur l'axe brut)")
     print(f"PK couverts              : {df['pk'].min():.1f} -> {df['pk'].max():.1f} m")
+    if bornes is not None:
+        print(f"Bornes                   : {len(bornes)} (distance a l'axe max "
+              f"{bornes['distance_axe'].max():.1f} m)")
+        if len(bornes) > 1:
+            print("  Intervalle          PK officiel   longueur axe    ecart")
+            for _, r in intervalles.iterrows():
+                print(f"  {r['borne_debut']:>8} -> {r['borne_fin']:<8} {r['pk_officiel_m']:9.0f} m "
+                      f"{r['longueur_axe_m']:11.0f} m  {r['ecart_m']:+7.0f} m ({r['ecart_pct']:+.1f} %)")
+            if (intervalles["ecart_pct"].abs() > 10).any():
+                print("  /!\\ Ecart > 10 % sur un intervalle : verifier la position ou le "
+                      "numero de la borne, ou le trace de l'axe.")
+        if bornes["distance_axe"].max() > 200:
+            print("  /!\\ Une borne est a plus de 200 m de l'axe : verifier qu'elle "
+                  "appartient bien a ce canal.")
     print(f"Distance crete-axe       : {df['distance_axe'].min():.1f} / "
           f"{df['distance_axe'].mean():.1f} / {df['distance_axe'].max():.1f} m (min/moy/max)")
     print(f"Gain du max transversal  : mediane {df['gain_vs_ligne'].median():.2f} m, "
@@ -546,7 +685,17 @@ def main(argv=None):
     p.add_argument("--distance-max", type=float, default=None,
                    help="Distance max crete-axe acceptee (m) ; au-dela le point est rejete")
     p.add_argument("--pk-origine", type=float, default=0.0,
-                   help="PK a l'origine de l'axe (decalage additif)")
+                   help="PK a l'origine de l'axe (decalage additif) ; inutile avec --bornes")
+    p.add_argument("--bornes", default=None,
+                   help="Couche de points des bornes PK reelles : les PK sont recales "
+                        "intervalle par intervalle (ecart variable entre bornes)")
+    p.add_argument("--couche-bornes", default=None)
+    p.add_argument("--champ-pk", default=None,
+                   help="Champ portant le PK des bornes (defaut : pk, pk_km, borne...)")
+    p.add_argument("--unite-bornes", choices=["km", "m"], default="km",
+                   help="Unite du champ PK des bornes")
+    p.add_argument("--axe-km", action="store_true",
+                   help="Graduer l'axe des PK du graphique en km")
     p.add_argument("--inverser-axe", action="store_true",
                    help="Inverse le sens de l'axe (PK croissants vers l'amont)")
     p.add_argument("--ligne-eau", default=None,
@@ -558,6 +707,9 @@ def main(argv=None):
 
     if args.pas_transversal <= 0 or args.pas_crete <= 0:
         sys.exit("Les pas doivent etre strictement positifs.")
+    if args.bornes and args.pk_origine:
+        sys.exit("--pk-origine et --bornes sont incompatibles : avec --bornes, "
+                 "les PK viennent des bornes.")
     traiter(args)
 
 

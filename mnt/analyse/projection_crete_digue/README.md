@@ -52,11 +52,51 @@ python projection_crete_digue.py --axe axe_profil_long.shp --crete crete_digue_R
 | `--longueur-min-retour` | Longueur minimale d'un retour de digue (m) | 10 |
 | `--retours` | `signaler`, `exclure` ou `separer` les tronçons perpendiculaires | `signaler` |
 | `--distance-max` | Distance crête–axe maximale acceptée (m) | aucune |
-| `--pk-origine` | PK à l'origine de l'axe | 0 |
+| `--pk-origine` | PK à l'origine de l'axe (décalage constant ; inutile avec `--bornes`) | 0 |
+| `--bornes` | Couche de points des bornes PK réelles : recalage intervalle par intervalle (voir ci-dessous) | aucune |
+| `--couche-bornes` | Couche à lire si le fichier en contient plusieurs | première |
+| `--champ-pk` | Champ portant le PK des bornes | `pk`, `pk_km`, `borne`… détecté |
+| `--unite-bornes` | Unité de ce champ : `km` ou `m` | `km` |
+| `--axe-km` | Graduer l'axe des PK du graphique en km | non |
 | `--inverser-axe` | PK croissants vers l'amont | non |
 | `--ligne-eau` | CSV `pk,z` d'une ligne d'eau, pour calculer la revanche | aucun |
 | `--pas-qa-bandes` | Pas d'export des bandes de contrôle (m) | 25 |
 | `--sortie` | Dossier de sortie | `./resultats` |
+
+## Comment sont calculés les PK
+
+Chaque point de crête est projeté perpendiculairement sur l'axe de
+référence. Son PK dépend de la position du pied de cette perpendiculaire le
+long de l'axe, jamais de la longueur propre de la digue. Une digue qui
+méandre ne décale donc pas les PK : plusieurs mètres de crête tombent sur le
+même mètre de PK (colonne `compression` du profil).
+
+Deux façons de passer de cette position aux PK du canal :
+
+- **Sans bornes** : `PK = --pk-origine + distance le long de l'axe`. C'est
+  exact si l'espacement réel entre bornes est égal à la longueur de l'axe
+  numérisé.
+- **Avec `--bornes`** : chaque borne est projetée sur l'axe ; entre deux
+  bornes successives, le PK est interpolé linéairement. L'écart réel entre
+  bornes (985 m, 1 025 m…) est donc respecté, et le profil tombe exactement
+  sur le PK officiel en face de chaque borne. Avant la première et après la
+  dernière borne, le PK avance de 1 m par mètre d'axe. Une seule borne
+  revient à calculer automatiquement `--pk-origine`.
+
+  ```bash
+  python projection_crete_digue.py --axe axe.shp --crete crete.shp --mnt mnt.tif \
+      --bornes bornes_pk.shp --champ-pk PK --axe-km
+  ```
+
+  Les bornes doivent se succéder dans le même ordre le long de l'axe que
+  leurs PK (tous croissants ou tous décroissants) ; sinon le programme
+  s'arrête en indiquant la borne suspecte. Le bilan affiche, pour chaque
+  intervalle, la longueur mesurée sur l'axe et l'écart au kilomètre
+  officiel. Au-delà de 10 % d'écart, une borne est probablement mal placée
+  ou mal numérotée.
+
+  Avec `--ligne-eau`, les PK du CSV de ligne d'eau doivent être des PK
+  officiels en mètres.
 
 ## Sorties (dans `--sortie`)
 
@@ -66,4 +106,6 @@ python projection_crete_digue.py --axe axe_profil_long.shp --crete crete_digue_R
 | `profil_crete_pk.csv` | Profil agrégé par pas de PK : Z min / médian / max |
 | `qa_points.gpkg` | Points de crête retenus, avec leurs drapeaux de contrôle |
 | `qa_bandes.gpkg` | Bandes transversales échantillonnées, pour contrôle visuel |
-| `profil_en_long.png` | Figure du profil en long |
+| `profil_en_long.png` | Figure du profil en long (avec une ligne verticale par borne si `--bornes`) |
+| `bornes_recalage.csv` | Avec `--bornes` : PK officiel, position sur l'axe et distance à l'axe de chaque borne |
+| `bornes_intervalles.csv` | Avec `--bornes` : longueur réelle de chaque intervalle et écart au PK officiel |
