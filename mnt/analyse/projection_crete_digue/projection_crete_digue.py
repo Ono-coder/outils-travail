@@ -207,6 +207,9 @@ def charger_bornes(args, axe, crs_axe):
         raise ValueError(f"Aucune borne dans {args.bornes}")
     if crs_axe is not None and gdf.crs is not None and gdf.crs != crs_axe:
         gdf = gdf.to_crs(crs_axe)
+    elif gdf.crs is None and crs_axe is not None:
+        warnings.warn(f"{args.bornes} n'a pas de systeme de coordonnees : "
+                      f"suppose identique a celui de l'axe ({crs_axe.to_string()}).")
 
     champ = args.champ_pk
     if champ is None:
@@ -227,11 +230,29 @@ def charger_bornes(args, axe, crs_axe):
     pk = valeurs.to_numpy(dtype=float) * (1000.0 if args.unite_bornes == "km" else 1.0)
     etiquettes = gdf[champ].astype(str).to_numpy()
 
+    # Une borne au-dela d'une extremite de l'axe se projette sur cette
+    # extremite : plusieurs bornes s'y empileraient. Elles sont ecartees.
+    tol = 0.5
+    hors_axe = (s <= tol) | (s >= axe.length - tol)
+    if hors_axe.any():
+        print(f"  /!\\ {int(hors_axe.sum())} borne(s) au-dela des extremites de l'axe, "
+              f"ecartee(s) : {', '.join(etiquettes[hors_axe])}")
+        print("      (prolonger l'axe pour les utiliser ; l'axe mesure "
+              f"{axe.length:,.0f} m)")
+        s, pk, etiquettes, dist = s[~hors_axe], pk[~hors_axe], etiquettes[~hors_axe], dist[~hors_axe]
+    if len(s) == 0:
+        raise ValueError("Aucune borne ne se projette a l'interieur de l'axe : verifier que "
+                         "les bornes et l'axe sont dans le meme systeme de coordonnees et "
+                         "concernent le meme canal.")
+
     ordre = np.argsort(s)
     s, pk, etiquettes, dist = s[ordre], pk[ordre], etiquettes[ordre], dist[ordre]
-    if np.any(np.diff(s) <= 0):
-        raise ValueError("Deux bornes se projettent au meme endroit de l'axe : "
-                         "verifier les doublons ou une borne mal placee.")
+    doublons = np.flatnonzero(np.diff(s) < 0.01)
+    if len(doublons):
+        details = "; ".join(f"{etiquettes[i]} et {etiquettes[i + 1]} (a {s[i]:.1f} m "
+                            f"le long de l'axe)" for i in doublons)
+        raise ValueError(f"Bornes projetees au meme endroit de l'axe : {details}. "
+                         "Verifier les doublons dans la couche.")
     if len(pk) > 1:
         d = np.diff(pk)
         if not (np.all(d > 0) or np.all(d < 0)):

@@ -113,6 +113,11 @@ Deux façons de passer de cette position aux PK du canal :
       --bornes bornes_pk.shp --champ-pk PK --axe-km
   ```
 
+  Les bornes situées au-delà des extrémités de l'axe sont écartées, avec un
+  avertissement qui les nomme : la couche de bornes peut donc couvrir tout le
+  canal, même si l'axe n'en couvre qu'une partie. Prolonger l'axe pour les
+  utiliser.
+
   Les bornes doivent se succéder dans le même ordre le long de l'axe que
   leurs PK (tous croissants ou tous décroissants) ; sinon le programme
   s'arrête en indiquant la borne suspecte. Le bilan affiche, pour chaque
