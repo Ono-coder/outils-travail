@@ -1,0 +1,22 @@
+# Configuration de discretiser_pk.py
+# Usage : python discretiser_pk.py --config config.toml
+# Les options passées en ligne de commande restent prioritaires sur ce fichier.
+# Chemins Windows : utiliser des apostrophes simples ('C:\...').
+
+[entrees]
+ligne = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\SIG\axe_lit_mineur.gpkg'   # ligne à discrétiser
+bornes = 'C:\Users\<utilisateur>\Desktop\MON_ETUDE\SIG\bornes_pk.gpkg'       # points des bornes PK
+# couche_ligne = "axe"
+# couche_bornes = "bornes"
+# champ_pk = "PK"            # défaut : champ pk, pk_km, borne... détecté
+unite_bornes = "km"          # "km" ou "m"
+
+[discretisation]
+pas = 100.0                  # m de PK : n = (PK entre deux bornes) / pas, arrondi
+# n_segments = 10            # nombre fixe de segments par intervalle (remplace pas)
+prolonger = false            # discrétiser aussi avant la 1re et après la dernière borne
+
+[sorties]
+gpkg = 'points_pk.gpkg'      # couche points_pk (et segments_pk si segments = true)
+csv = 'points_pk.csv'        # optionnel
+segments = true              # écrire aussi les segments entre points

@@ -28,6 +28,7 @@ Chaque outil a son dossier, avec un README qui détaille son utilisation.
 | | [`time_series`](telemac/post_traitement/time_series/) | Export CSV des time series, y compris fichiers partiels non fusionnés |
 | **Cartographie** | [`scan_ign`](cartographie/scan_ign/) | Récupération et assemblage des fonds SCAN 25 / 100 / OACI de l'IGN |
 | **Outils** | [`interpolation_lineaire`](outils/interpolation_lineaire/) | Interpolation linéaire 1D d'une série x / y à pas constant |
+| | [`discretiser_pk`](outils/discretiser_pk/) | Points PK régulièrement espacés le long d'une ligne, recalés sur les bornes (n segments égaux par intervalle) |
 | | [`reorder_columns`](outils/reorder_columns/) | Réordonner les colonnes d'un fichier texte et ajouter des colonnes calculées |
 | | [`integrer_depot`](outils/maintenance/integrer_depot/) | Intégrer un dépôt dans outils-travail (anonymisé) puis l'archiver |
 
