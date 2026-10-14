@@ -1,78 +1,270 @@
+# -*- coding: utf-8 -*-
 """
-fusion_csv.py
+Fusion des CSV intermédiaires (extraction TELEMAC par sous-domaine) en un
+fichier Excel unique, avec identification des points de contrôle.
 
-Fusionne les CSV (tabulation) produits par main_batch.py en un seul fichier :
-une ligne par temps, les colonnes de tous les fichiers côte à côte.
+- Lit la liste de points (ex. time_series_ERC_U1.txt : x  y  id  nom)
+- Pour chaque point configuré, recherche la colonne (nœud X..._Y...) la plus
+  proche, à moins de DIST_MAX mètres.
+- En-tête du fichier fusionné :
+      ligne 1 : X du nœud retenu
+      ligne 2 : Y du nœud retenu
+      ligne 3 : nom de la variable (nom du point)
+- Les points sans nœud à moins de DIST_MAX sont signalés (console + onglet
+  "Correspondance") et apparaissent en colonne vide marquée "MANQUANT".
 
 Usage :
-    python fusion_csv.py --entree csv_intermediaires --sortie fusion.csv
+    python fusion_v3.py [fichier_points] [dossier_csv] [sortie.xlsx]
 """
 import csv
 import glob
+import math
 import os
-from collections import defaultdict, OrderedDict
+import re
+import sys
+from collections import defaultdict
 
-def fusion_native_python(input_folder="csv_intermediaires", output_csv="fusion_native.csv"):
-    """Version pure Python sans pandas - souvent plus rapide"""
-    
+try:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+except ImportError:
+    print("❌ Le module openpyxl est requis : pip install openpyxl")
+    sys.exit(1)
+
+# --------------------------------------------------------------------------- #
+#  Paramètres par défaut                                                      #
+# --------------------------------------------------------------------------- #
+POINTS_FILE  = "time_series_ERC_U1.txt"
+INPUT_FOLDER = "csv_intermediaires"
+OUTPUT_XLSX  = "fusion_ERC_U1.xlsx"
+DIST_MAX     = 100.0   # m : distance max entre point configuré et nœud retenu
+
+COL_RE = re.compile(r"^X(-?[\d.]+)_Y(-?[\d.]+)$")
+
+
+def to_float(s):
+    return float(str(s).strip().replace(",", "."))
+
+
+# --------------------------------------------------------------------------- #
+#  Lecture de la liste de points                                              #
+# --------------------------------------------------------------------------- #
+def lire_points(path):
+    """Retourne une liste de dicts {x, y, id, nom} dans l'ordre du fichier.
+    Les lignes d'en-tête TELEMAC (ex. '1 51', '0 1000000 2') sont ignorées :
+    seules les lignes 'x y id nom' (≥ 4 champs) sont retenues."""
+    points = []
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        for n, line in enumerate(f, 1):
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            try:
+                x, y = to_float(parts[0]), to_float(parts[1])
+            except ValueError:
+                continue
+            pid = parts[2]
+            nom = " ".join(parts[3:])
+            points.append({"x": x, "y": y, "id": pid, "nom": nom, "ligne": n})
+    return points
+
+
+# --------------------------------------------------------------------------- #
+#  Lecture et fusion des CSV                                                  #
+# --------------------------------------------------------------------------- #
+def lire_csv(input_folder):
     csv_files = sorted(glob.glob(os.path.join(input_folder, "*.csv")))
-    print(f"📁 {len(csv_files)} fichiers trouvés")
-    
-    # Dictionnaire global : {temps: {colonne: valeur}}
-    all_data = defaultdict(dict)
-    all_columns = set(['temps'])
-    
+    print(f"📁 {len(csv_files)} fichiers CSV trouvés dans {input_folder}")
+
+    all_data = defaultdict(dict)   # {temps(str): {colonne: valeur(float)}}
+    all_columns = set()
+
     for i, file_path in enumerate(csv_files, 1):
         print(f"📖 [{i}/{len(csv_files)}] {os.path.basename(file_path)}")
-        
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f, delimiter='\t')
-                
+            with open(file_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f, delimiter="\t")
                 for row in reader:
-                    temps = row['temps']
-                    
-                    # Ajouter toutes les colonnes (sauf temps)
+                    temps = row["temps"]
                     for col, val in row.items():
-                        if col != 'temps' and val.strip():  # Ignorer les valeurs vides
+                        if col == "temps" or col is None or val is None:
+                            continue
+                        val = val.strip()
+                        if not val:
+                            continue
+                        try:
+                            all_data[temps][col] = to_float(val)
+                        except ValueError:
                             all_data[temps][col] = val
-                            all_columns.add(col)
-        
+                        all_columns.add(col)
         except Exception as e:
             print(f"  ⚠ Erreur: {e}")
             continue
-    
-    print(f"📊 {len(all_data)} pas de temps, {len(all_columns)-1} colonnes")
-    
-    # Trier les colonnes (temps en premier)
-    sorted_columns = ['temps'] + sorted([c for c in all_columns if c != 'temps'])
-    
-    # Export
-    print("💾 Export...")
-    with open(output_csv, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f, delimiter='\t')
-        
-        # En-tête
-        writer.writerow(sorted_columns)
-        
-        # Données triées par temps
-        sorted_times = sorted(all_data.keys(), key=lambda x: float(x.replace(',', '.')))
-        
-        for temps in sorted_times:
-            row = [temps]
-            for col in sorted_columns[1:]:  # Skip 'temps'
-                row.append(all_data[temps].get(col, ''))
-            writer.writerow(row)
-    
-    print(f"✅ Terminé: {output_csv}")
+
+    print(f"📊 {len(all_data)} pas de temps, {len(all_columns)} colonnes (nœuds)")
+    return all_data, all_columns
+
+
+def coords_colonnes(all_columns):
+    """{colonne: (x, y)} pour les colonnes au format X..._Y..."""
+    coords = {}
+    for col in all_columns:
+        m = COL_RE.match(col.strip())
+        if m:
+            coords[col] = (float(m.group(1)), float(m.group(2)))
+        else:
+            print(f"  ⚠ Colonne au format inattendu ignorée : {col}")
+    return coords
+
+
+# --------------------------------------------------------------------------- #
+#  Association points configurés ↔ nœuds                                      #
+# --------------------------------------------------------------------------- #
+def associer(points, coords, dist_max):
+    for p in points:
+        best_col, best_d = None, math.inf
+        for col, (cx, cy) in coords.items():
+            d = math.hypot(cx - p["x"], cy - p["y"])
+            if d < best_d:
+                best_col, best_d = col, d
+        p["dist"] = best_d if best_col else None
+        if best_col is not None and best_d <= dist_max:
+            p["col"] = best_col
+            p["xn"], p["yn"] = coords[best_col]
+            p["statut"] = "OK"
+        else:
+            p["col"] = None
+            p["xn"] = p["yn"] = None
+            p["statut"] = "MANQUANT"
+            p["col_proche"] = best_col
+
+    # Nœud partagé par plusieurs points
+    usage = defaultdict(list)
+    for p in points:
+        if p["col"]:
+            usage[p["col"]].append(p["nom"])
+    for p in points:
+        if p["col"] and len(usage[p["col"]]) > 1:
+            p["statut"] = "OK (nœud partagé : " + ", ".join(usage[p["col"]]) + ")"
+
+    non_associees = sorted(set(coords) - set(usage))
+    return non_associees
+
+
+# --------------------------------------------------------------------------- #
+#  Export Excel                                                               #
+# --------------------------------------------------------------------------- #
+def exporter_xlsx(output_xlsx, points, all_data, coords, non_associees):
+    wb = Workbook(write_only=True)
+    bold = Font(bold=True)
+    red = Font(bold=True, color="C00000")
+    fill_miss = PatternFill("solid", fgColor="F8CBAD")
+
+    def cell(ws, value, font=None, fill=None):
+        from openpyxl.cell import WriteOnlyCell
+        c = WriteOnlyCell(ws, value=value)
+        if font:
+            c.font = font
+        if fill:
+            c.fill = fill
+        return c
+
+    # ---- Feuille données ------------------------------------------------- #
+    ws = wb.create_sheet("Donnees")
+    ws.freeze_panes = "B4"
+
+    # colonnes : points configurés dans l'ordre, puis nœuds non associés
+    colonnes = [(p["nom"], p["col"], p["xn"] if p["col"] else p["x"],
+                 p["yn"] if p["col"] else p["y"], p["col"] is None) for p in points]
+    for col in non_associees:
+        x, y = coords[col]
+        colonnes.append(("NON_ASSOCIE", col, x, y, False))
+
+    ws.append([cell(ws, "X", bold)] +
+              [cell(ws, c[2], red if c[4] else bold, fill_miss if c[4] else None) for c in colonnes])
+    ws.append([cell(ws, "Y", bold)] +
+              [cell(ws, c[3], red if c[4] else bold, fill_miss if c[4] else None) for c in colonnes])
+    ws.append([cell(ws, "temps (s)", bold)] +
+              [cell(ws, (c[0] + " - MANQUANT") if c[4] else c[0],
+                    red if c[4] else bold, fill_miss if c[4] else None) for c in colonnes])
+
+    sorted_times = sorted(all_data.keys(), key=to_float)
+    for temps in sorted_times:
+        d = all_data[temps]
+        ws.append([to_float(temps)] + [d.get(c[1]) if c[1] else None for c in colonnes])
+
+    # ---- Feuille correspondance ------------------------------------------ #
+    ws2 = wb.create_sheet("Correspondance")
+    ws2.append([cell(ws2, h, bold) for h in
+                ["id", "Nom", "X configuré", "Y configuré", "X nœud", "Y nœud",
+                 "Distance (m)", "Statut", "Nœud le plus proche (si manquant)"]])
+    for p in points:
+        miss = p["col"] is None
+        f = red if miss else None
+        ws2.append([
+            cell(ws2, p["id"], f), cell(ws2, p["nom"], f),
+            cell(ws2, p["x"], f), cell(ws2, p["y"], f),
+            cell(ws2, p["xn"], f), cell(ws2, p["yn"], f),
+            cell(ws2, round(p["dist"], 2) if p["dist"] is not None else None, f),
+            cell(ws2, p["statut"], f),
+            cell(ws2, p.get("col_proche") if miss else None, f),
+        ])
+    if non_associees:
+        ws2.append([])
+        ws2.append([cell(ws2, "Nœuds présents dans les CSV mais associés à aucun point :", bold)])
+        for col in non_associees:
+            ws2.append([None, col, None, None, coords[col][0], coords[col][1]])
+
+    wb.save(output_xlsx)
+
+
+# --------------------------------------------------------------------------- #
+def main():
+    points_file  = sys.argv[1] if len(sys.argv) > 1 else POINTS_FILE
+    input_folder = sys.argv[2] if len(sys.argv) > 2 else INPUT_FOLDER
+    output_xlsx  = sys.argv[3] if len(sys.argv) > 3 else OUTPUT_XLSX
+
+    if not os.path.exists(points_file):
+        print(f"❌ Fichier de points introuvable : {points_file}")
+        sys.exit(1)
+
+    points = lire_points(points_file)
+    print(f"📍 {len(points)} points configurés lus dans {os.path.basename(points_file)}")
+
+    all_data, all_columns = lire_csv(input_folder)
+    if not all_data:
+        print("❌ Aucune donnée lue.")
+        sys.exit(1)
+    coords = coords_colonnes(all_columns)
+
+    non_associees = associer(points, coords, DIST_MAX)
+
+    # ---- Bilan console --------------------------------------------------- #
+    manquants = [p for p in points if p["col"] is None]
+    partages = [p for p in points if p["statut"].startswith("OK (")]
+    print("\n" + "=" * 60)
+    print(f"🔎 ASSOCIATION DES POINTS (distance max {DIST_MAX:.0f} m)")
+    print(f"  ✅ Trouvés   : {len(points) - len(manquants)}/{len(points)}")
+    print(f"  ❌ Manquants : {len(manquants)}")
+    for p in manquants:
+        prox = (f"nœud le plus proche à {p['dist']:.1f} m ({p['col_proche']})"
+                if p.get("col_proche") else "aucun nœud")
+        print(f"     - [{p['id']}] {p['nom']}  (X={p['x']}, Y={p['y']}) → {prox}")
+    if partages:
+        print(f"  ⚠ Points partageant un même nœud :")
+        for p in partages:
+            print(f"     - [{p['id']}] {p['nom']} : {p['statut']}")
+    if non_associees:
+        print(f"  ⚠ {len(non_associees)} nœud(s) des CSV associé(s) à aucun point "
+              f"(ajouté(s) en fin de tableau) :")
+        for c in non_associees:
+            print(f"     - {c}")
+    print("=" * 60)
+
+    print("💾 Export Excel...")
+    exporter_xlsx(output_xlsx, points, all_data, coords, non_associees)
+    print(f"✅ Terminé : {output_xlsx}")
+
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(
-        description="Fusionne les CSV produits par main_batch.py en un seul fichier trié par temps")
-    parser.add_argument("--entree", default="csv_intermediaires",
-                        help="Dossier des CSV à fusionner (défaut : csv_intermediaires)")
-    parser.add_argument("--sortie", default="fusion_native.csv",
-                        help="CSV fusionné (défaut : fusion_native.csv)")
-    args = parser.parse_args()
-    fusion_native_python(args.entree, args.sortie)
+    main()

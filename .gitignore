@@ -5,6 +5,7 @@ venv/
 .vscode/
 .idea/
 *.log
+*.toml
 
 # Configurations locales (voir les config_exemple.toml de chaque outil)
 config.toml
