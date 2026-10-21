@@ -2,13 +2,16 @@ import os
 import sys
 import time
 import argparse
-import tomllib
 import logging
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from urllib.parse import urlencode
 import geopandas as gpd
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 # ============================================================================
 # CONFIGURATION DU LOGGING
@@ -117,51 +120,63 @@ def build_wms_url(tile_info, resolution=2000):
     return f"{base_url}?{urlencode(params)}"
 
 def download_mnt_tile(args):
-    """Télécharge une tuile MNT unique"""
-    tile_info, output_folder, timeout, resolution = args
-    
-    try:
-        url = build_wms_url(tile_info, resolution)
-        filename = f"{tile_info['name']}.tif"
-        output_path = Path(output_folder) / filename
-        
-        # Vérifier si déjà téléchargé
-        if output_path.exists() and output_path.stat().st_size > 10000:
-            return True, filename, f"Déjà téléchargé ({output_path.stat().st_size/(1024*1024):.1f}MB)"
-        
-        # Télécharger
-        start_time = time.time()
-        response = requests.get(url, timeout=timeout, stream=True)
-        
-        if response.status_code != 200:
-            return False, filename, f"HTTP {response.status_code}"
-        
-        # Vérifier que c'est un GeoTIFF valide
-        content_type = response.headers.get('content-type', '')
-        if 'xml' in content_type.lower():
-            error_msg = response.text[:200]
-            return False, filename, f"Erreur IGN: {error_msg}"
-        
-        # Sauvegarder
-        with open(output_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-        
-        # Vérifier taille
-        file_size = output_path.stat().st_size
-        if file_size < 10000:
-            output_path.unlink()
-            return False, filename, f"Fichier trop petit ({file_size} bytes)"
-        
-        duration = time.time() - start_time
-        size_mb = file_size / (1024*1024)
-        return True, filename, f"{size_mb:.1f}MB en {duration:.1f}s"
-    
-    except requests.Timeout:
-        return False, filename, "Timeout"
-    except Exception as e:
-        return False, filename, f"Erreur: {str(e)}"
+    """Télécharge une tuile MNT unique (avec reprises en cas d'échec)"""
+    tile_info, output_folder, timeout, resolution, tentatives = args
+    logger = logging.getLogger('lidar_mnt_downloader')
+
+    url = build_wms_url(tile_info, resolution)
+    filename = f"{tile_info['name']}.tif"
+    output_path = Path(output_folder) / filename
+    # Écriture dans un .part renommé à la fin : un fichier .tif présent est forcément complet
+    part_path = output_path.with_suffix('.tif.part')
+
+    # Vérifier si déjà téléchargé
+    if output_path.exists() and output_path.stat().st_size > 10000:
+        return True, filename, f"Déjà téléchargé ({output_path.stat().st_size/(1024*1024):.1f}MB)"
+
+    message = ""
+    for tentative in range(1, tentatives + 1):
+        try:
+            start_time = time.time()
+            response = requests.get(url, timeout=timeout, stream=True)
+
+            if response.status_code != 200:
+                raise RuntimeError(f"HTTP {response.status_code}")
+
+            # Vérifier que c'est un GeoTIFF valide
+            content_type = response.headers.get('content-type', '')
+            if 'xml' in content_type.lower():
+                return False, filename, f"Erreur IGN: {response.text[:200]}"
+
+            # Sauvegarder
+            with open(part_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=65536):
+                    if chunk:
+                        f.write(chunk)
+
+            # Vérifier taille (complète et non vide)
+            file_size = part_path.stat().st_size
+            expected = response.headers.get('content-length')
+            if expected and file_size != int(expected):
+                raise RuntimeError(f"Fichier incomplet ({file_size}/{expected} bytes)")
+            if file_size < 10000:
+                raise RuntimeError(f"Fichier trop petit ({file_size} bytes)")
+
+            part_path.replace(output_path)
+            duration = time.time() - start_time
+            size_mb = file_size / (1024*1024)
+            return True, filename, f"{size_mb:.1f}MB en {duration:.1f}s"
+
+        except Exception as e:
+            # Les coupures en cours de flux remontent en ConnectionError, pas en Timeout
+            message = "Timeout" if isinstance(e, requests.Timeout) else f"Erreur: {e}"
+            if part_path.exists():
+                part_path.unlink()
+            if tentative < tentatives:
+                logger.info(f"   ↻ {filename} - {message} - nouvelle tentative ({tentative + 1}/{tentatives})")
+                time.sleep(10 * tentative)
+
+    return False, filename, message
 
 # ============================================================================
 # FUSION DES MNT EN MOSAÏQUE (VERSION SIMPLE)
@@ -312,7 +327,8 @@ def main():
         
         timeout = telech.get("timeout_s", 120)
         resolution = telech.get("resolution_px", 2000)
-        tasks = [(tile, output_folder, timeout, resolution) for tile in tiles]
+        tentatives = telech.get("tentatives", 3)
+        tasks = [(tile, output_folder, timeout, resolution, tentatives) for tile in tiles]
         start_time = time.time()
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:

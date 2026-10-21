@@ -38,7 +38,8 @@ titre d'exemple.
 | `[chemins] mosaique` | Mosaïque GeoTIFF finale | `./lidar_output/mosaique_mnt.tif` |
 | `[chemins] log` | Journal d'exécution | `lidar_mnt_download.log` |
 | `[telechargement] max_workers` | Téléchargements parallèles | 6 |
-| `[telechargement] timeout_s` | Timeout par requête (s) | 120 |
+| `[telechargement] timeout_s` | Délai max sans données reçues (s) | 120 |
+| `[telechargement] tentatives` | Essais par dalle avant abandon | 3 |
 | `[telechargement] resolution_px` | Pixels par côté de dalle (2000 → 0,5 m) | 2000 |
 | `[gdal] conda_prefix` | Environnement conda contenant GDAL, utilisé si aucun environnement n'est activé | — |
 

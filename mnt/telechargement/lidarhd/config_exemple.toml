@@ -10,9 +10,10 @@ mosaique = './lidar_output/mosaique_mnt.tif'      # mosaïque finale
 log = 'lidar_mnt_download.log'
 
 [telechargement]
-max_workers = 6        # téléchargements parallèles
-timeout_s = 120        # timeout par requête (s)
+max_workers = 3        # téléchargements parallèles (le serveur IGN peut être lent)
+timeout_s = 120        # délai max sans données reçues (s)
 resolution_px = 2000   # pixels par côté de dalle de 1 km (2000 -> 0,5 m)
+tentatives = 3         # essais par dalle avant abandon
 
 [gdal]
 # Environnement conda contenant gdalbuildvrt / gdal_translate,
