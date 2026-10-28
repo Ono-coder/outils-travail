@@ -17,6 +17,7 @@ import sys
 import glob
 import argparse
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -25,6 +26,9 @@ else:
 
 # sous_programme.py est cherché à côté de ce script, quel que soit le dossier courant
 SOUS_PROGRAMME = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sous_programme.py")
+
+# Nombre de fichiers traités simultanément
+NB_PROCESSUS = min(8, os.cpu_count() or 1)
 
 def get_var_index(input_folder, var_index=None):
     """Lance sous_programme.py sur le premier fichier SLF pour lister les variables,
@@ -87,7 +91,8 @@ def lire_arguments():
     parser.add_argument("--pas", type=float, help="Pas de temps d'extraction (s)")
     parser.add_argument("--tolerance", type=float, help="Tolérance sur le pas de temps (s, défaut 0.05)")
     parser.add_argument("--variable", type=int, help="Index de la variable à extraire")
-    parser.add_argument("--telemac", help="Dossier scripts/python3 de TELEMAC")
+    parser.add_argument("--telemac", help="Dossier scripts/python3 de TELEMAC "
+                                          "(inutile : lecture Selafin directe)")
 
     # Les valeurs du fichier de configuration remplacent les défauts,
     # les options passées en ligne de commande restent prioritaires
@@ -155,33 +160,27 @@ def main():
     print(f"\nDossier {output_folder} prêt")
     print(f"{len(slf_files)} fichiers trouvés")
 
-    success_count = 0
-    error_files = []
+    if not os.path.exists(SOUS_PROGRAMME):
+        print(f"  ❌ sous_programme.py non trouvé : {SOUS_PROGRAMME}")
+        return
 
-    for idx, slf_file in enumerate(slf_files, 1):
+    print(f"  🔄 Commande: python sous_programme.py [fichier] [sortie] "
+          f"{target_timestep} {tolerance} {var_index}")
+    print(f"  {NB_PROCESSUS} fichiers traités en parallèle")
+
+    def traiter(idx, slf_file):
+        """Lance sous_programme.py sur un fichier ; renvoie (succès, lignes de compte rendu)."""
         base_name = os.path.splitext(os.path.basename(slf_file))[0]
         output_csv = os.path.join(output_folder, f"{base_name}_{idx:04d}.csv")
-
-        print(f"\n[{idx}/{len(slf_files)}] Traitement: {os.path.basename(slf_file)}")
-
+        cmd_args = [
+            sys.executable, SOUS_PROGRAMME,
+            str(slf_file),
+            str(output_csv),
+            str(target_timestep),
+            str(tolerance),
+            str(var_index)   # 5e argument
+        ]
         try:
-            if not os.path.exists(SOUS_PROGRAMME):
-                print(f"  ❌ sous_programme.py non trouvé : {SOUS_PROGRAMME}")
-                error_files.append(slf_file)
-                continue
-
-            cmd_args = [
-                sys.executable, SOUS_PROGRAMME,
-                str(slf_file),
-                str(output_csv),
-                str(target_timestep),
-                str(tolerance),
-                str(var_index)   # 5e argument
-            ]
-
-            print(f"  🔄 Commande: python sous_programme.py [fichier] [sortie] "
-                  f"{target_timestep} {tolerance} {var_index}")
-
             result = subprocess.run(
                 cmd_args,
                 capture_output=True,
@@ -191,35 +190,40 @@ def main():
                 errors='replace',
                 cwd=os.getcwd()
             )
-
-            if result.returncode == 0:
-                if os.path.exists(output_csv) and os.path.getsize(output_csv) > 0:
-                    print(f"  ✅ Succès: {os.path.basename(output_csv)} ({os.path.getsize(output_csv)} bytes)")
-                    success_count += 1
-                elif os.path.exists(output_csv):
-                    print(f"  ⚠ Fichier vide créé")
-                    error_files.append(slf_file)
-                else:
-                    print(f"  ❌ Fichier de sortie non créé")
-                    error_files.append(slf_file)
-            else:
-                print(f"  ❌ Erreur (code {result.returncode}):")
-                if result.stdout:
-                    for line in result.stdout.split('\n')[:5]:
-                        if line.strip():
-                            print(f"      {line}")
-                if result.stderr:
-                    for line in result.stderr.split('\n')[:5]:
-                        if line.strip():
-                            print(f"      {line}")
-                error_files.append(slf_file)
-
         except subprocess.TimeoutExpired:
-            print(f"  ⏰ Timeout (>5min)")
-            error_files.append(slf_file)
+            return False, [f"  ⏰ Timeout (>5min)"]
         except Exception as e:
-            print(f"  ❌ Exception: {e}")
-            error_files.append(slf_file)
+            return False, [f"  ❌ Exception: {e}"]
+
+        if result.returncode == 0:
+            if os.path.exists(output_csv) and os.path.getsize(output_csv) > 0:
+                return True, [f"  ✅ Succès: {os.path.basename(output_csv)} ({os.path.getsize(output_csv)} bytes)"]
+            if os.path.exists(output_csv):
+                return False, [f"  ⚠ Fichier vide créé"]
+            return False, [f"  ❌ Fichier de sortie non créé"]
+        lignes = [f"  ❌ Erreur (code {result.returncode}):"]
+        for sortie in (result.stdout, result.stderr):
+            if sortie:
+                lignes += [f"      {line}" for line in sortie.split('\n')[:5] if line.strip()]
+        return False, lignes
+
+    success_count = 0
+    error_files = []
+
+    # Chaque fichier est traité par un processus distinct : les sous-programmes
+    # tournent en parallèle, les comptes rendus s'affichent au fil de l'eau
+    with ThreadPoolExecutor(max_workers=NB_PROCESSUS) as pool:
+        futures = {pool.submit(traiter, idx, f): f for idx, f in enumerate(slf_files, 1)}
+        for n, future in enumerate(as_completed(futures), 1):
+            slf_file = futures[future]
+            ok, lignes = future.result()
+            print(f"\n[{n}/{len(slf_files)}] {os.path.basename(slf_file)}")
+            for ligne in lignes:
+                print(ligne)
+            if ok:
+                success_count += 1
+            else:
+                error_files.append(slf_file)
 
     print(f"\n" + "="*50)
     print(f"📊 RÉSUMÉ FINAL")

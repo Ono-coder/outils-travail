@@ -8,8 +8,7 @@ Appelé par main_batch.py pour chaque fichier ; utilisable seul :
     python sous_programme.py <input_slf> <output_csv> [target_timestep] [tolerance] [var_index]
 
 Sans var_index, les variables disponibles sont listées puis le script s'arrête.
-Le dossier scripts/python3 de TELEMAC est lu dans la variable d'environnement
-TELEMAC_PYTHON si l'environnement TELEMAC n'est pas déjà chargé.
+Le fichier Selafin est lu directement avec numpy (TELEMAC n'est pas requis).
 """
 import sys
 import os
@@ -28,6 +27,50 @@ def safe_get_arg(index, default=None):
     except Exception as e:
         print(f"Erreur argument {index}: {e}")
         return default
+
+def lire_selafin(chemin):
+    """Lit un fichier Selafin d'un seul bloc avec numpy.
+
+    Renvoie (varnames, x, y, times, data) où data est un tableau structuré dont
+    le champ f"v{i}" contient, pour chaque pas de temps, les valeurs de la
+    variable i aux npoin points. Un dernier pas de temps tronqué (calcul en
+    cours) est ignoré.
+    """
+    with open(chemin, "rb") as f:
+        # Endianness : le premier marqueur de record (titre) vaut 80
+        endian = ">" if np.frombuffer(f.read(4), ">i4")[0] == 80 else "<"
+        f.seek(0)
+        i4 = np.dtype(endian + "i4")
+
+        def record():
+            n = int(np.frombuffer(f.read(4), i4)[0])
+            contenu = f.read(n)
+            f.read(4)
+            return contenu
+
+        record()                                            # titre
+        nvar = int(np.frombuffer(record(), i4)[0])
+        varnames = [record()[:16].decode("latin-1") for _ in range(nvar)]
+        iparam = np.frombuffer(record(), i4)
+        if iparam[9] == 1:
+            record()                                        # date
+        nelem, npoin, ndp, _ = np.frombuffer(record(), i4)
+        record()                                            # ikle
+        record()                                            # ipobo
+        brut_x = record()
+        ff = np.dtype(endian + ("f8" if len(brut_x) == 8 * npoin else "f4"))
+        x = np.frombuffer(brut_x, ff).astype(float)
+        y = np.frombuffer(record(), ff).astype(float)
+        debut = f.tell()
+
+    champs = [("m0", i4), ("t", ff), ("m1", i4)]
+    for i in range(nvar):
+        champs += [(f"a{i}", i4), (f"v{i}", ff, (int(npoin),)), (f"b{i}", i4)]
+    dtype = np.dtype(champs)
+    ntimes = (os.path.getsize(chemin) - debut) // dtype.itemsize
+    data = np.memmap(chemin, dtype=dtype, mode="r", offset=debut, shape=(ntimes,))
+    times = data["t"].astype(float)
+    return varnames, x, y, times, data
 
 def select_nearest_times(times, target_timestep, tolerance):
     """Version robuste avec tolérance personnalisable"""
@@ -65,26 +108,29 @@ def select_nearest_times(times, target_timestep, tolerance):
     
     min_time = float(times_array[0])
     max_time = float(times_array[-1])
-    
+
     print(f"  Plage: {min_time:.2f}s à {max_time:.2f}s ({len(times_array)} points)")
-    
+
     # Générer les temps cibles
     wanted_times = np.arange(min_time, max_time + target_timestep, target_timestep)
-    
-    selected_indices = set()
-    accepted_count = 0
-    rejected_count = 0
-    
-    for tgt in wanted_times:
-        distances = np.abs(times_array - tgt)
-        idx = np.argmin(distances)
-        
-        if distances[idx] <= tolerance:
-            selected_indices.add(int(idx))
-            accepted_count += 1
-        else:
-            rejected_count += 1
-    
+
+    # Temps le plus proche de chaque cible par recherche dichotomique (temps
+    # croissants) ; à égalité, l'indice le plus petit est retenu comme argmin
+    right = np.clip(np.searchsorted(times_array, wanted_times), 1, len(times_array) - 1)
+    left = right - 1
+    dist_left = np.abs(times_array[left] - wanted_times)
+    dist_right = np.abs(times_array[right] - wanted_times)
+    nearest = np.where(dist_left <= dist_right, left, right)
+    distances = np.minimum(dist_left, dist_right)
+    if len(times_array) == 1:
+        nearest = np.zeros(len(wanted_times), dtype=int)
+        distances = np.abs(times_array[0] - wanted_times)
+
+    accepted = distances <= tolerance
+    accepted_count = int(accepted.sum())
+    rejected_count = len(wanted_times) - accepted_count
+    selected_indices = set(nearest[accepted].tolist())
+
     # Toujours inclure premier et dernier
     selected_indices.add(0)
     selected_indices.add(len(times_array) - 1)
@@ -140,79 +186,47 @@ def main():
             os.makedirs(output_dir)
             print(f"OK Dossier créé: {output_dir}")
         
-        print("Configuration TELEMAC...")
-        # Dossier scripts/python3 de TELEMAC : variable d'environnement TELEMAC_PYTHON
-        # (renseignée par main_batch.py), sinon environnement TELEMAC déjà chargé
-        if os.environ.get("TELEMAC_PYTHON"):
-            sys.path.append(os.environ["TELEMAC_PYTHON"])
-        
-        try:
-            from data_manip.extraction.telemac_file import TelemacFile
-            print("OK Import TelemacFile OK")
-        except ImportError as e:
-            print(f"ERREUR: Import TelemacFile: {e}")
-            sys.exit(1)
-        
         print("Ouverture fichier SLF...")
         try:
-            slf = TelemacFile(input_slf)
+            varnames, x_coords, y_coords, times, data = lire_selafin(input_slf)
             print("OK Fichier SLF ouvert")
         except Exception as e:
             print(f"ERREUR: Ouverture SLF: {e}")
             sys.exit(1)
-        
+
         # ------------------------------------------------------------------ #
         #  LISTING ou SÉLECTION de la variable                                #
         # ------------------------------------------------------------------ #
         if var_index_str is None:
             print("\nVariables disponibles dans le fichier SLF:")
-            for i, vn in enumerate(slf.varnames):
+            for i, vn in enumerate(varnames):
                 print(f"  [{i}] {vn.strip()}")
             print("\nRelancez en ajoutant l'index souhaité comme 5e argument, ex:")
             print(f"  python sous_programme.py \"{input_slf}\" \"{output_csv}\" "
                   f"{target_timestep_str} {tolerance_str} <index_variable>")
-            slf.close()
             sys.exit(0)
-        
+
         try:
             var_index = int(var_index_str)
-            if var_index < 0 or var_index >= len(slf.varnames):
-                print(f"ERREUR: Index {var_index} invalide — doit être compris entre 0 et {len(slf.varnames)-1}")
+            if var_index < 0 or var_index >= len(varnames):
+                print(f"ERREUR: Index {var_index} invalide — doit être compris entre 0 et {len(varnames)-1}")
                 print("Variables disponibles:")
-                for i, vn in enumerate(slf.varnames):
+                for i, vn in enumerate(varnames):
                     print(f"  [{i}] {vn.strip()}")
-                slf.close()
                 sys.exit(1)
-            varname = slf.varnames[var_index]
+            varname = varnames[var_index]
             print(f"OK Variable sélectionnée: [{var_index}] '{varname.strip()}'")
         except ValueError:
             print(f"ERREUR: Index variable invalide: '{var_index_str}' (doit être un entier)")
-            slf.close()
             sys.exit(1)
         # ------------------------------------------------------------------ #
-        
-        if len(slf.varnames) == 0:
-            print("ERREUR: Aucune variable dans le fichier SLF")
-            slf.close()
-            sys.exit(1)
-        
-        print("Lecture métadonnées...")
-        try:
-            x_coords = slf.meshx
-            y_coords = slf.meshy
-            npoints  = slf.npoin2
-            times    = slf.times
-            
-            print("OK Métadonnées OK:")
-            print(f"  Points:       {npoints}")
-            print(f"  Pas de temps: {len(times)}")
-            print(f"  Variable:     {varname.strip()}")
-            
-        except Exception as e:
-            print(f"ERREUR: Lecture métadonnées: {e}")
-            slf.close()
-            sys.exit(1)
-        
+
+        npoints = len(x_coords)
+        print("OK Métadonnées OK:")
+        print(f"  Points:       {npoints}")
+        print(f"  Pas de temps: {len(times)}")
+        print(f"  Variable:     {varname.strip()}")
+
         print("Filtrage des pas de temps...")
         try:
             if target_timestep > 0:
@@ -223,7 +237,6 @@ def main():
         except Exception as e:
             print(f"ERREUR: Filtrage pas de temps: {e}")
             traceback.print_exc()
-            slf.close()
             sys.exit(1)
         
         print("Construction en-tête...")
@@ -239,46 +252,26 @@ def main():
             with open(output_csv, mode="w", newline='', encoding="utf-8") as f:
                 writer = csv.writer(f, delimiter="\t")
                 writer.writerow(header)
-                
-                exported_count  = 0
-                total_to_export = len(selected_indices)
-                
-                for i, it in enumerate(selected_indices):
-                    if i % 50 == 0 or i == total_to_export - 1:
-                        print(f"  Progress: {i+1}/{total_to_export}")
-                    
-                    try:
-                        t = times[it]
-                        if hasattr(t, '__len__') and not isinstance(t, str):
-                            t = t[0]
-                        
-                        values = slf.get_data_value(varname, it)
-                        row = [str(t)]
-                        for ip in range(npoints):
-                            row.append(str(values[ip]))
-                        writer.writerow(row)
-                        exported_count += 1
-                    except Exception as e:
-                        print(f"  Erreur pas de temps {it}: {e}")
-                        continue
-            
+
+                # Lecture groupée des pas de temps retenus, puis écriture en bloc
+                values = data[f"v{var_index}"][selected_indices].astype(float)
+                t_sel = times[selected_indices]
+                writer.writerows(
+                    [str(t)] + [str(v) for v in row]
+                    for t, row in zip(t_sel.tolist(), values.tolist())
+                )
+                exported_count = len(selected_indices)
+
             print("SUCCES Export réussi:")
             print(f"  Fichier: {output_csv}")
             print(f"  Lignes:  {exported_count}")
             if os.path.exists(output_csv):
                 print(f"  Taille:  {os.path.getsize(output_csv)} bytes")
-            
+
         except Exception as e:
             print(f"ERREUR: Export: {e}")
-            slf.close()
             sys.exit(1)
-        
-        try:
-            slf.close()
-            print("OK Fichier SLF fermé")
-        except:
-            pass
-        
+
         print("=== TRAITEMENT TERMINÉ AVEC SUCCÈS ===")
         
     except Exception as e:

@@ -17,10 +17,11 @@ TELEMAC n'a pas pu fusionner les fichiers partiels d'un calcul parallèle.
 
 ## Prérequis
 
-Les modules Python de TELEMAC (`data_manip`) : lancer les scripts depuis
-l'environnement TELEMAC, ou indiquer le dossier `scripts/python3` de TELEMAC
-(`--telemac`, clé `[telemac] python` ou variable d'environnement
-`TELEMAC_PYTHON`). `numpy` pour `sous_programme.py`. Python 3.11 ou plus pour
+`main_batch.py` et `sous_programme.py` lisent les fichiers Selafin directement
+avec `numpy` : TELEMAC n'est pas requis. `extract_time_series.py` utilise les
+modules Python de TELEMAC (`data_manip`) : le lancer depuis l'environnement
+TELEMAC, ou indiquer le dossier `scripts/python3` de TELEMAC (`--telemac` ou
+variable d'environnement `TELEMAC_PYTHON`). Python 3.11 ou plus pour
 `--config` (sinon `pip install tomli`).
 
 ## Préparer le calcul TELEMAC
