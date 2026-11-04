@@ -4,6 +4,13 @@
 # Chemins Windows : utiliser des apostrophes simples ('C:\...').
 
 [fichiers]
-resultat = 'T2DSEO'                        # fichier résultat des sections de contrôle TELEMAC
-sections = 'control_sections.txt'          # fichier de définition des sections
-sortie_excel = 'control_sections.xlsx'     # fichier Excel de sortie
+resultat = 'C:\Users\avallee\Desktop\EDD_OTTMARSHEIM\TELEMAC_2026\_Consequences_aval\ERC_U1\res\T2DSEO_ERC_U1'                        # fichier résultat des sections de contrôle TELEMAC
+sections = 'C:\Users\avallee\Desktop\EDD_OTTMARSHEIM\TELEMAC_2026\_Consequences_aval\ERC_U1\modele\control_sections_ERC_U1.txt'          # fichier de définition des sections
+sortie_excel = 'C:\Users\avallee\Desktop\EDD_OTTMARSHEIM\TELEMAC_2026\_Consequences_aval\ERC_U1\res\control_sections.xlsx'     # fichier Excel de sortie
+
+[echantillonnage]
+# Pas de temps conservés autour du pic de crue de chaque section (max de |débit|)
+actif = true
+# [largeur de la fenêtre centrée sur le pic (s), pas d'extraction (s) ; 0 = tous les pas de temps]
+paliers = [[600, 0], [1200, 1], [1800, 5], [3600, 10]]
+pas_hors_pic = 60      # s ; pas d'extraction en dehors des fenêtres
