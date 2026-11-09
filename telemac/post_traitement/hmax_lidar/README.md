@@ -21,8 +21,13 @@ Principe :
 ## Prérequis
 
 ```bash
-pip install numpy scipy matplotlib rasterio
+pip install numpy scipy matplotlib rasterio numba
 ```
+
+`numba` est fortement conseillé : il rastérise directement les triangles
+du maillage sur la grille LiDAR (quelques secondes au lieu de plusieurs
+minutes par interpolation). Sans lui, le script fonctionne mais passe par
+la localisation de matplotlib, beaucoup plus lente.
 
 L'environnement TELEMAC n'est pas nécessaire : le fichier Selafin
 (`.slf` / `.res`) est lu directement. Le maillage et le LiDAR doivent être
